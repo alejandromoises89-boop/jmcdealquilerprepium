@@ -7,7 +7,7 @@ import {
   ShieldCheck, Trash2, TrendingUp, Wallet,
   Eye, Search, ArrowRight,
   Wrench, Database, ExternalLink, MessageSquare, Plus, AlertTriangle,
-  Edit3, History, Save, X, Bell, CheckCircle2, Settings2, MailCheck, BellRing, Activity
+  Edit3, History, Save, X, Bell, CheckCircle2, Settings2, MailCheck, BellRing, Activity, Receipt
 } from 'lucide-react';
 import ContractDocument from './ContractDocument';
 import { GOOGLE_SHEET_EMBED_URL } from '../constants';
@@ -30,12 +30,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   setFlota, 
   reservations, 
   setReservations, 
+  gastos,
+  setGastos,
   exchangeRate,
   onSyncSheet,
   isSyncing,
   breakdowns
 }) => {
-  const [activeSection, setActiveSection] = useState<'resumen' | 'flota' | 'monitoreo' | 'registros' | 'sheet' | 'settings'>('resumen');
+  const [activeSection, setActiveSection] = useState<'resumen' | 'flota' | 'monitoreo' | 'registros' | 'gastos' | 'sheet' | 'settings'>('resumen');
   const [selectedContract, setSelectedContract] = useState<{res: Reservation, veh: Vehicle} | null>(null);
   const [editingVehicle, setEditingVehicle] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,12 +54,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   }, [reservations, searchTerm]);
 
   const totalIngresos = reservations.reduce((acc, curr) => acc + curr.total, 0);
+  const totalGastos = gastos.reduce((acc, curr) => acc + curr.monto, 0);
 
   const tabs = [
     { id: 'resumen', label: 'Dashboard', icon: TrendingUp },
     { id: 'flota', label: 'Unidades', icon: Car },
     { id: 'monitoreo', label: 'Estado Técnico', icon: Activity },
     { id: 'registros', label: 'Alquileres', icon: FileText },
+    { id: 'gastos', label: 'Gastos', icon: Receipt },
     { id: 'sheet', label: 'Cloud DB', icon: Database },
     { id: 'settings', label: 'Ajustes', icon: Settings2 },
   ];
@@ -83,7 +87,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           <h2 className="text-5xl lg:text-7xl font-serif font-bold text-bordeaux-950 tracking-tighter">Gestión Maestro</h2>
         </div>
         <button onClick={onSyncSheet} disabled={isSyncing} className="flex items-center gap-4 px-10 py-5 bg-white border border-gray-100 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.3em] shadow-xl hover:bg-gray-50 active:scale-95 transition-all">
-          <RefreshCw size={22} className={isSyncing ? 'animate-spin' : ''} /> {isSyncing ? 'Refrescar DB' : 'Refrescar DB'}
+          <RefreshCw size={22} className={isSyncing ? 'animate-spin' : ''} /> {isSyncing ? 'Sincronizando' : 'Refrescar DB'}
         </button>
       </div>
 
@@ -103,8 +107,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             {[
               { label: 'Ingresos Totales', val: `R$ ${totalIngresos.toLocaleString()}`, sub: `Gs. ${(totalIngresos * exchangeRate).toLocaleString()}`, icon: Wallet, color: 'text-bordeaux-800' },
               { label: 'Unidades Activas', val: flota.length, sub: 'Flota 2026', icon: Car, color: 'text-gold' },
-              { label: 'Reservas Activas', val: reservations.length, sub: 'Contratos Vigentes', icon: FileText, color: 'text-bordeaux-950' },
-              { label: 'Incidentes', val: breakdowns.length, sub: 'Taller / Soporte', icon: AlertTriangle, color: 'text-red-600' }
+              { label: 'Gastos Operativos', val: `R$ ${totalGastos.toLocaleString()}`, sub: 'Mantenimiento y Seguros', icon: Receipt, color: 'text-red-600' },
+              { label: 'Incidentes', val: breakdowns.length, sub: 'Taller / Soporte', icon: AlertTriangle, color: 'text-orange-600' }
             ].map((stat, idx) => (
               <div key={idx} className="bg-white p-10 rounded-[3.5rem] border border-gray-100 shadow-sm space-y-4 hover:shadow-xl transition-all">
                 <stat.icon className={`${stat.color}`} size={32} />
@@ -184,32 +188,129 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
         {activeSection === 'registros' && (
           <div className="bg-white rounded-[4rem] border border-gray-100 shadow-2xl overflow-hidden animate-slideUp">
+            <div className="p-10 border-b border-gray-100 flex items-center justify-between bg-bordeaux-50/20">
+               <div>
+                  <h3 className="text-2xl font-serif font-bold text-bordeaux-950">Registro de Alquileres</h3>
+                  <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em]">Historial Corporativo JM</p>
+               </div>
+               <div className="relative group">
+                  <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-bordeaux-800 transition-all" size={20} />
+                  <input 
+                    type="text" 
+                    placeholder="Filtrar por nombre o CI..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-16 pr-8 py-4 bg-white border border-gray-100 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux-800 shadow-inner w-72"
+                  />
+               </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
-                <thead className="bg-gray-50/50">
+                <thead className="bg-bordeaux-950">
                   <tr>
-                    <th className="px-10 py-8 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">ID</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Titular</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Unidad</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Monto</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">Acciones</th>
+                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Código JM</th>
+                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Titular Arrendatario</th>
+                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Unidad Asignada</th>
+                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Liquidación BRL</th>
+                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] text-center">Gestión</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50 text-[12px] font-bold">
+                <tbody className="divide-y divide-gray-100 bg-white">
                   {filteredReservations.map((res) => (
-                    <tr key={res.id} className="hover:bg-gray-50/40 transition-all">
-                      <td className="px-10 py-8 text-gray-300 uppercase font-black">#JM-{res.id.slice(-6)}</td>
-                      <td className="px-10 py-8 uppercase text-bordeaux-950 font-black">{res.cliente}</td>
-                      <td className="px-10 py-8 text-gold uppercase">{res.auto}</td>
-                      <td className="px-10 py-8 text-bordeaux-800">R$ {res.total}</td>
+                    <tr key={res.id} className="hover:bg-bordeaux-50/30 transition-all group">
                       <td className="px-10 py-8">
-                        <div className="flex justify-center gap-3">
-                          <button className="p-4 bg-bordeaux-50 text-bordeaux-800 rounded-2xl hover:bg-bordeaux-800 hover:text-white transition-all"><Eye size={18} /></button>
-                          <button className="p-4 bg-red-50 text-red-600 rounded-2xl hover:bg-red-600 hover:text-white transition-all"><Trash2 size={18} /></button>
+                         <span className="text-[11px] font-black text-bordeaux-900 bg-bordeaux-50 px-4 py-2 rounded-xl border border-bordeaux-100 uppercase">#JM-{res.id.slice(-6)}</span>
+                      </td>
+                      <td className="px-10 py-8">
+                         <div className="space-y-1">
+                            <p className="text-sm font-bold text-gray-900 uppercase">{res.cliente}</p>
+                            <p className="text-[10px] font-black text-gray-400 tracking-widest uppercase">DOC: {res.ci}</p>
+                         </div>
+                      </td>
+                      <td className="px-10 py-8">
+                         <div className="flex items-center gap-4">
+                            <Car size={16} className="text-gold" />
+                            <span className="text-sm font-bold text-gray-700 uppercase">{res.auto}</span>
+                         </div>
+                      </td>
+                      <td className="px-10 py-8 text-sm font-black text-bordeaux-800">
+                         R$ {res.total.toLocaleString()}
+                      </td>
+                      <td className="px-10 py-8">
+                        <div className="flex justify-center gap-4">
+                          <button 
+                            title="Ver Contrato"
+                            onClick={() => {
+                               const veh = flota.find(v => v.nombre === res.auto) || flota[0];
+                               setSelectedContract({res, veh});
+                            }}
+                            className="p-4 bg-gray-50 text-bordeaux-900 rounded-2xl hover:bg-bordeaux-950 hover:text-white transition-all shadow-sm border border-gray-100"
+                          >
+                            <FileText size={18} />
+                          </button>
+                          <button className="p-4 bg-gray-50 text-red-600 rounded-2xl hover:bg-red-600 hover:text-white transition-all shadow-sm border border-gray-100"><Trash2 size={18} /></button>
                         </div>
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+            {filteredReservations.length === 0 && (
+              <div className="py-24 text-center">
+                 <p className="text-gray-400 font-bold uppercase tracking-widest">No se encontraron registros de alquiler.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeSection === 'gastos' && (
+          <div className="bg-white rounded-[4rem] border border-gray-100 shadow-2xl overflow-hidden animate-slideUp">
+            <div className="p-10 border-b border-gray-100 flex items-center justify-between bg-red-50/20">
+               <div>
+                  <h3 className="text-2xl font-serif font-bold text-bordeaux-950">Control de Egresos</h3>
+                  <p className="text-[10px] font-black text-red-600 uppercase tracking-[0.4em]">Finanzas Operativas JM</p>
+               </div>
+               <button className="flex items-center gap-4 px-8 py-4 bg-bordeaux-950 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-black transition-all">
+                  <Plus size={18} className="text-gold" /> Cargar Gasto
+               </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-bordeaux-950">
+                  <tr>
+                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Fecha</th>
+                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Concepto del Gasto</th>
+                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Categoría</th>
+                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Monto BRL</th>
+                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] text-center">Control</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {gastos.length > 0 ? gastos.map((g) => (
+                    <tr key={g.id} className="hover:bg-red-50/30 transition-all group">
+                      <td className="px-10 py-8 text-sm font-bold text-gray-400">{g.fecha}</td>
+                      <td className="px-10 py-8 text-sm font-bold text-gray-900 uppercase">{g.concepto}</td>
+                      <td className="px-10 py-8">
+                         <span className="text-[10px] font-black text-red-800 bg-red-50 px-4 py-2 rounded-xl border border-red-100 uppercase tracking-wider">{g.categoria}</span>
+                      </td>
+                      <td className="px-10 py-8 text-sm font-black text-red-600">R$ {g.monto.toLocaleString()}</td>
+                      <td className="px-10 py-8">
+                        <div className="flex justify-center">
+                          <button className="p-4 bg-gray-50 text-red-600 rounded-2xl hover:bg-red-600 hover:text-white transition-all shadow-sm border border-gray-100"><Trash2 size={18} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={5} className="py-24 text-center">
+                         <div className="flex flex-col items-center gap-4">
+                            <Receipt size={48} className="text-gray-100" />
+                            <p className="text-gray-400 font-bold uppercase tracking-widest">Sin gastos registrados en el periodo.</p>
+                         </div>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

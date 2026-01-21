@@ -53,7 +53,7 @@ export const INITIAL_FLOTA: Vehicle[] = [
   {
     id: '5',
     nombre: "Toyota Wish 2009 Gris",
-    precio: 220.0,
+    precio: 230.0,
     img: "https://i.ibb.co/XrbktMmw/image.jpg",
     estado: "Disponible",
     placa: "AAVP924",
