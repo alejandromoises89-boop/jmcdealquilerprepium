@@ -15,6 +15,8 @@ export interface Vehicle {
   consumo?: string;
   mantenimientoVence?: string;
   seguroVence?: string;
+  cuotaSeguro?: string;
+  cuotaMantenimiento?: string;
 }
 
 export interface InspectionChecklist {
@@ -37,8 +39,11 @@ export interface Reservation {
   total: number; // in BRL
   paymentType?: 'Full' | 'OneDay';
   comprobante?: string; // base64
-  status: 'Pending' | 'Confirmed' | 'Completed' | 'Cancelled';
+  status: 'Requested' | 'Confirmed' | 'Completed' | 'Cancelled';
+  admissionStatus?: 'Approved' | 'Review' | 'Denied';
+  internalNotes?: string;
   inspection?: InspectionChecklist;
+  includeInCalendar?: boolean; // Controla si bloquea fechas en el calendario
 }
 
 export interface Gasto {

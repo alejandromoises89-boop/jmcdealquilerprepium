@@ -76,7 +76,7 @@ const ContractDocument: React.FC<ContractDocumentProps> = ({ vehicle, data, days
 
           <p><b>SEGUNDA - Duración del Contrato.</b> El presente contrato tendrá una duración de <b>{days} ({days === 1 ? 'UN' : days === 2 ? 'DOS' : days === 3 ? 'TRES' : days}) DÍAS</b>, comenzando el {data.inicio?.split(' ')[0] || '___/___/___'} y finalizando el {data.fin?.split(' ')[0] || '___/___/___'}, salvo que se acuerde otra cosa por ambas partes mediante una extensión o terminación anticipada.</p>
 
-          <p><b>TERCERA - Precio y Forma de Pago.</b> El arrendatario se compromete a pagar al arrendador la cantidad de R$ {vehicle.precio} (o su equivalente en Guaraníes Gs. {(vehicle.precio * 1450).toLocaleString()}) por cada día de alquiler. <b>TOTAL DEL CONTRATO: R$ {data.total}</b> (Aprox. Gs. {totalPYG.toLocaleString()}). El pago se realizará por adelantado mediante Efectivo o Transferencia Electrónica.</p>
+          <p><b>TERCERA - Precio y Forma de Pago.</b> El arrendatario se compromete a pagar al arrendador la cantidad de R$ {vehicle.precio} (o su equivalente en Guaraníes bajo <b>Cotización Oficial DNIT del Ministerio de Hacienda</b> Gs. {totalPYG.toLocaleString()}) por cada día de alquiler. <b>TOTAL DEL CONTRATO: R$ {data.total}</b>. El pago se realizará por adelantado mediante Efectivo o Transferencia Electrónica.</p>
 
           <p><b>CUARTA - Depósito de Seguridad.</b> El arrendatario pagará cinco millones de guaraníes (Gs. 5.000.000) en caso de siniestro (accidente) para cubrir los daños al vehículo durante el periodo de alquiler.</p>
 
@@ -117,8 +117,12 @@ const ContractDocument: React.FC<ContractDocumentProps> = ({ vehicle, data, days
           </div>
         </div>
 
+        <div className="mt-8 p-4 bg-gray-50 rounded-xl border border-gray-100 text-[9px] text-gray-400 italic">
+          * Todas las conversiones monetarias de este contrato se rigen estrictamente por los valores de referencia de la Dirección Nacional de Ingresos Tributarios (DNIT) de la República del Paraguay.
+        </div>
+
         <p className="text-[8px] text-center text-gray-400 pt-10 uppercase font-bold tracking-[0.2em]">
-          Contrato generado digitalmente en Ciudad del Este, Paraguay a los {todayDate}.
+          Contrato generado digitalmente bajo normativa DNIT en Ciudad del Este, Paraguay a los {todayDate}.
         </p>
       </div>
     </div>

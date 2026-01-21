@@ -1,6 +1,6 @@
 
 import { Reservation } from '../types';
-import { GOOGLE_SHEET_RESERVATIONS_URL } from '../constants';
+import { GOOGLE_SHEET_RESERVATIONS_URL, GOOGLE_SHEET_WEBAPP_URL } from '../constants';
 
 const parseCSV = (text: string): string[][] => {
   const result: string[][] = [];
@@ -51,22 +51,16 @@ const parseCSV = (text: string): string[][] => {
 
 export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null> => {
   try {
-    console.log("%c[JM-SYSTEM] Iniciando extracción desde Google Sheets...", "color: #800000; font-weight: bold;");
+    console.log("%c[JM-SYSTEM] Extrayendo datos de logística desde Google Sheets...", "color: #800000; font-weight: bold;");
     
     const response = await fetch(`${GOOGLE_SHEET_RESERVATIONS_URL}&t=${Date.now()}`);
     
-    if (!response.ok) {
-      console.error(`%c[JM-SYSTEM] Error de conexión: HTTP ${response.status}`, "color: #ff0000;");
-      throw new Error(`HTTP Error: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
 
     const csvText = await response.text();
     const rows = parseCSV(csvText);
     
-    if (rows.length < 2) {
-      console.warn("%c[JM-SYSTEM] Conexión establecida pero la planilla está vacía.", "color: #D4AF37;");
-      return null;
-    }
+    if (rows.length < 2) return null;
 
     const headers = rows[0].map(h => h.toLowerCase().trim());
     const dataRows = rows.slice(1);
@@ -80,30 +74,48 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
         return '';
       };
 
-      const startStr = getVal(['entrega', 'inicio', 'desde', 'fecha_inicio', 'fecha']);
-      const endStr = getVal(['devolución', 'devuelta', 'fin', 'hasta', 'fecha_fin', 'fecha retorno']);
+      // Mapeo específico para Salida (Inicio) y Retorno (Fin)
+      const startStr = getVal(['salida', 'entrega', 'inicio', 'desde', 'fecha_inicio', 'fecha_salida', 'fecha']);
+      const endStr = getVal(['retorno', 'devolución', 'devuelta', 'regreso', 'fin', 'hasta', 'fecha_fin', 'fecha_retorno']);
       
       if (!startStr) return null;
 
-      let rawAuto = getVal(['auto', 'vehiculo', 'unidad']).toLowerCase();
+      // Normalizar el nombre del auto para facilitar el matching
+      const autoName = getVal(['auto', 'vehículo', 'unidad', 'carro']).toLowerCase();
 
       return {
-        id: getVal(['id', 'reserva_id', 'nro', 'numero']) || `sheet-${index}`,
+        id: getVal(['id', 'reserva_id', 'nro', 'número']) || `sheet-${index}-${Date.now()}`,
         cliente: getVal(['cliente', 'nombre', 'arrendatario']) || 'Cliente Externo',
         ci: getVal(['ci', 'documento', 'rg', 'cpf']) || 'N/A',
         celular: getVal(['celular', 'whatsapp', 'tel', 'contacto']) || 'N/A',
-        auto: rawAuto || 'Desconocido',
+        auto: autoName || 'Desconocido',
         inicio: startStr,
         fin: endStr || startStr,
-        total: parseFloat(getVal(['total', 'monto', 'brl', 'precio']).replace(/[^0-9.]/g, '')) || 0,
-        status: 'Confirmed'
+        total: parseFloat(getVal(['total', 'monto', 'brl', 'precio', 'valor']).replace(/[^0-9.]/g, '')) || 0,
+        status: 'Confirmed',
+        includeInCalendar: true
       };
     }).filter((r): r is Reservation => r !== null);
 
-    console.log(`%c[JM-SYSTEM] Sincronización exitosa: ${parsed.length} registros cargados de Google Sheets.`, "color: #008000; font-weight: bold;");
     return parsed;
   } catch (error) {
-    console.error("%c[JM-SYSTEM] Error crítico en la conexión con Google Sheets:", "color: #ff0000; font-weight: bold;", error);
+    console.error("[JM-SYSTEM] Error en sincronización de logística:", error);
     return null;
+  }
+};
+
+export const saveReservationToSheet = async (res: Reservation): Promise<boolean> => {
+  try {
+    const response = await fetch(GOOGLE_SHEET_WEBAPP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(res),
+    });
+    console.log(`%c[JM-SYSTEM] Backup en la nube completado: ${res.id}`, "color: #008000; font-weight: bold;");
+    return true;
+  } catch (error) {
+    console.error("[JM-SYSTEM] Error al guardar backup:", error);
+    return false;
   }
 };

@@ -16,13 +16,13 @@ const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, user, isAdminU
     <nav className="sticky top-0 z-50 glass-morphism border-b border-gray-100/50 shadow-sm">
       <div className="max-w-7xl mx-auto px-6 lg:px-12">
         <div className="flex justify-between h-24">
-          <div className="flex items-center space-x-4 cursor-pointer group" onClick={() => setActiveTab('reservas')}>
-            <div className="bg-white p-2 rounded-2xl shadow-sm border border-gray-50 group-hover:shadow-md transition-all duration-500">
-              <img src="https://i.ibb.co/PzsvxYrM/JM-Asociados-Logotipo-02.png" alt="JM Logo" className="h-10 w-auto" />
-            </div>
-            <div className="flex flex-col">
-              <h1 className="text-xl font-serif font-bold text-bordeaux-800 tracking-tight leading-none">JM ASOCIADOS</h1>
-              <p className="text-[9px] tracking-[0.3em] text-gold uppercase font-bold mt-1">Premium Mobility</p>
+          <div className="flex items-center cursor-pointer group" onClick={() => setActiveTab('reservas')}>
+            <div className="bg-white p-1 rounded-2xl transition-all duration-500 group-hover:scale-105">
+              <img 
+                src="https://i.ibb.co/PzsvxYrM/JM-Asociados-Logotipo-02.png" 
+                alt="JM Logo" 
+                className="h-16 md:h-20 w-auto object-contain" 
+              />
             </div>
           </div>
 
@@ -48,12 +48,20 @@ const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, user, isAdminU
             ))}
           </div>
 
-          <div className="flex items-center space-x-4">
-            <div className="relative">
-              <img src={user.picture} alt="Avatar" className="h-11 w-11 rounded-2xl border-2 border-bordeaux-100 shadow-sm object-cover" />
-              {isAdminUnlocked && <div className="absolute -top-1 -right-1 w-4 h-4 bg-gold rounded-full flex items-center justify-center border-2 border-white shadow-sm"><ShieldCheck size={8} className="text-white" /></div>}
+          <div className="flex items-center space-x-6">
+            <div className="flex items-center gap-3 bg-gray-50 p-1.5 pr-4 rounded-full border border-gray-100">
+              <div className="relative">
+                <img src={user.picture} alt="Avatar" className="h-10 w-10 rounded-full border-2 border-white shadow-sm object-cover" />
+                <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${isAdminUnlocked ? 'bg-green-500' : 'bg-gold'}`}></div>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black uppercase text-gray-400 tracking-widest leading-none">{isAdminUnlocked ? 'Master' : 'Cliente'}</span>
+                <span className="text-[11px] font-bold text-bordeaux-950 truncate max-w-[100px]">{user.name.split(' ')[0]}</span>
+              </div>
             </div>
-            <button onClick={onLogout} className="p-2.5 text-gray-300 hover:text-red-600 transition-colors duration-300 rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
+            <button onClick={onLogout} className="p-3 text-gray-300 hover:text-red-600 transition-colors duration-300 rounded-2xl hover:bg-red-50" title="Cerrar Sesión">
+              <LogOut size={22} />
+            </button>
           </div>
         </div>
       </div>

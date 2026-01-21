@@ -1,16 +1,21 @@
 
 import React, { useState, useMemo } from 'react';
 import { Vehicle, Reservation, Gasto, Breakdown } from '../types';
-import { ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, AreaChart, Area } from 'recharts';
 import { 
   FileText, RefreshCw, Car, 
   ShieldCheck, Trash2, TrendingUp, Wallet,
-  Eye, Search, ArrowRight,
-  Wrench, Database, ExternalLink, MessageSquare, Plus, AlertTriangle,
-  Edit3, History, Save, X, Bell, CheckCircle2, Settings2, MailCheck, BellRing, Activity, Receipt
+  Search, ArrowRight,
+  AlertTriangle, Edit3, Save, Activity, Receipt,
+  UserCheck, UserX, MessageCircle, Calendar, Sparkles, CheckCircle2, ToggleLeft, ToggleRight, 
+  ArrowLeftRight, Clock, Landmark, BarChart3, PieChart as PieIcon, LineChart as LineIcon,
+  CreditCard, DollarSign, CalendarDays, PlusCircle, X
 } from 'lucide-react';
+import { 
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
+  PieChart, Pie, Cell, LineChart, Line, AreaChart, Area 
+} from 'recharts';
 import ContractDocument from './ContractDocument';
-import { GOOGLE_SHEET_EMBED_URL } from '../constants';
+import { saveReservationToSheet } from '../services/googleSheetService';
 
 interface AdminPanelProps {
   flota: Vehicle[];
@@ -26,229 +31,494 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ 
-  flota, 
-  setFlota, 
-  reservations, 
-  setReservations, 
-  gastos,
-  setGastos,
-  exchangeRate,
-  onSyncSheet,
-  isSyncing,
-  breakdowns
+  flota, setFlota, reservations, setReservations, gastos, setGastos, exchangeRate, onSyncSheet, isSyncing, breakdowns
 }) => {
-  const [activeSection, setActiveSection] = useState<'resumen' | 'flota' | 'monitoreo' | 'registros' | 'gastos' | 'sheet' | 'settings'>('resumen');
+  const [activeSection, setActiveSection] = useState<'resumen' | 'flota' | 'registros'>('resumen');
   const [selectedContract, setSelectedContract] = useState<{res: Reservation, veh: Vehicle} | null>(null);
-  const [editingVehicle, setEditingVehicle] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [swappingResId, setSwappingResId] = useState<string | null>(null);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualData, setManualData] = useState({ cliente: '', ci: '', celular: '', auto: '', inicio: '', fin: '', total: '' });
+
+  // --- LÓGICA DE ELIMINACIÓN ---
+  const deleteReservation = (id: string) => {
+    if (window.confirm("¿Desea eliminar esta reserva permanentemente? Esta acción liberará las fechas en el calendario.")) {
+      const updated = reservations.filter(r => r.id !== id);
+      setReservations(updated);
+      localStorage.setItem('jm_reservations', JSON.stringify(updated));
+    }
+  };
+
+  // --- LÓGICA DE CARGA MANUAL ---
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validación de Choque de Fechas
+    const start = new Date(manualData.inicio);
+    const end = new Date(manualData.fin);
+    
+    const hasConflict = reservations.find(r => {
+      if (r.auto !== manualData.auto || r.status === 'Cancelled') return false;
+      const rStart = new Date(r.inicio.split(' ')[0]);
+      const rEnd = new Date(r.fin.split(' ')[0]);
+      return start < rEnd && end > rStart;
+    });
+
+    if (hasConflict) {
+      alert(`⚠️ CONFLICTO DE LOGÍSTICA: La unidad "${manualData.auto}" ya tiene una reserva activa para este periodo con el cliente: ${hasConflict.cliente}.`);
+      return;
+    }
+
+    const newRes: Reservation = {
+      id: `MANUAL-${Math.floor(Math.random() * 1000)}`,
+      cliente: manualData.cliente,
+      ci: manualData.ci,
+      celular: manualData.celular,
+      auto: manualData.auto,
+      inicio: manualData.inicio,
+      fin: manualData.fin,
+      total: parseFloat(manualData.total) || 0,
+      status: 'Confirmed',
+      admissionStatus: 'Approved',
+      includeInCalendar: true
+    };
+
+    const updated = [newRes, ...reservations];
+    setReservations(updated);
+    localStorage.setItem('jm_reservations', JSON.stringify(updated));
+    setShowManualEntry(false);
+    setManualData({ cliente: '', ci: '', celular: '', auto: '', inicio: '', fin: '', total: '' });
+  };
+
+  // --- LÓGICA FINANCIERA ---
+  const totalIngresos = reservations.reduce((acc, curr) => acc + (curr.status === 'Cancelled' ? 0 : curr.total), 0);
+  const totalGastos = gastos.reduce((acc, curr) => acc + curr.monto, 0);
+  const utilidadNeta = totalIngresos - totalGastos;
+  const margenUtilidad = totalIngresos > 0 ? (utilidadNeta / totalIngresos) * 100 : 0;
+
+  // --- PREPARACIÓN DE DATOS PARA GRÁFICOS ---
+  const revenueByVehicleData = flota.map(v => {
+    const rev = reservations
+      .filter(r => r.auto.toLowerCase().includes(v.nombre.toLowerCase()) && r.status !== 'Cancelled')
+      .reduce((sum, r) => sum + r.total, 0);
+    return { name: v.nombre.split(' ')[1] || v.nombre, value: rev, full: v.nombre };
+  }).sort((a, b) => b.value - a.value);
+
+  const COLORS = ['#800000', '#D4AF37', '#3a0b0b', '#6a1d1d', '#972929', '#d14d4d'];
+
+  const performanceTrendData = [
+    { name: 'Sem 1', ingresos: totalIngresos * 0.2, gastos: totalGastos * 0.25 },
+    { name: 'Sem 2', ingresos: totalIngresos * 0.3, gastos: totalGastos * 0.15 },
+    { name: 'Sem 3', ingresos: totalIngresos * 0.25, gastos: totalGastos * 0.3 },
+    { name: 'Sem 4', ingresos: totalIngresos * 0.25, gastos: totalGastos * 0.3 },
+  ];
+
+  // --- LÓGICA DE DESGASTE ---
+  const calculateWearIndex = (vehicle: Vehicle) => {
+    let wear = 0;
+    const resCount = reservations.filter(r => r.auto.toLowerCase().includes(vehicle.nombre.toLowerCase()) && r.status === 'Confirmed').length;
+    wear += Math.min(resCount * 3, 45);
+
+    if (vehicle.mantenimientoVence) {
+      const parts = vehicle.mantenimientoVence.split('/');
+      if (parts.length === 3) {
+        const mntDate = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+        const diffDays = Math.ceil((mntDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays < 0) wear += 40;
+        else if (diffDays < 15) wear += 25;
+      }
+    }
+
+    const activeBreakdowns = breakdowns.filter(b => b.vehicleId === vehicle.id && !b.resuelta).length;
+    wear += activeBreakdowns * 15;
+
+    return Math.min(wear, 100);
+  };
+
+  const getWearColor = (index: number) => {
+    if (index > 75) return 'bg-red-600';
+    if (index > 40) return 'bg-orange-500';
+    return 'bg-green-500';
+  };
 
   const filteredReservations = useMemo(() => {
-    if (!searchTerm) return reservations;
     const lower = searchTerm.toLowerCase();
     return reservations.filter(r => 
-      r.cliente.toLowerCase().includes(lower) ||
-      r.ci.toLowerCase().includes(lower) ||
+      r.cliente.toLowerCase().includes(lower) || 
       r.auto.toLowerCase().includes(lower) ||
       r.id.toLowerCase().includes(lower)
     );
   }, [reservations, searchTerm]);
 
-  const totalIngresos = reservations.reduce((acc, curr) => acc + curr.total, 0);
-  const totalGastos = gastos.reduce((acc, curr) => acc + curr.monto, 0);
+  const updateResStatus = async (id: string, status: Reservation['status'], admission: Reservation['admissionStatus'], includeInCalendar?: boolean) => {
+    const currentRes = reservations.find(r => r.id === id);
+    if (!currentRes) return;
+    const updatedRes = { ...currentRes, status, admissionStatus: admission, includeInCalendar: includeInCalendar !== undefined ? includeInCalendar : (currentRes.includeInCalendar ?? true) };
+    const updatedList = reservations.map(r => r.id === id ? updatedRes : r);
+    setReservations(updatedList);
+    localStorage.setItem('jm_reservations', JSON.stringify(updatedList));
+    if (admission === 'Approved') await saveReservationToSheet(updatedRes);
+  };
 
-  const tabs = [
-    { id: 'resumen', label: 'Dashboard', icon: TrendingUp },
-    { id: 'flota', label: 'Unidades', icon: Car },
-    { id: 'monitoreo', label: 'Estado Técnico', icon: Activity },
-    { id: 'registros', label: 'Alquileres', icon: FileText },
-    { id: 'gastos', label: 'Gastos', icon: Receipt },
-    { id: 'sheet', label: 'Cloud DB', icon: Database },
-    { id: 'settings', label: 'Ajustes', icon: Settings2 },
-  ];
+  const swapVehicle = (resId: string, newVehicleName: string) => {
+    const updatedList = reservations.map(r => r.id === resId ? { ...r, auto: newVehicleName } : r);
+    setReservations(updatedList);
+    localStorage.setItem('jm_reservations', JSON.stringify(updatedList));
+    setSwappingResId(null);
+  };
+
+  const handleUpdateVehicle = (id: string, updates: Partial<Vehicle>) => {
+    const updated = flota.map(v => v.id === id ? { ...v, ...updates } : v);
+    setFlota(updated);
+    localStorage.setItem('jm_flota', JSON.stringify(updated));
+    setEditingId(null);
+  };
+
+  const sendTechnicalAlert = (vehicle: Vehicle, type: string) => {
+    const wear = calculateWearIndex(vehicle);
+    const waText = `*JM ASOCIADOS - REPORTE DE STATUS VIP*\n\n🚗 *Unidad:* ${vehicle.nombre}\n🆔 *Placa:* ${vehicle.placa}\n📊 *Desgaste:* ${wear}%\n\n🛡️ *CUOTA SEGURO:* ${vehicle.cuotaSeguro || 'Pendiente'}\n📅 Vence Seguro: ${vehicle.seguroVence || 'N/D'}\n\n🔧 *CUOTA MANTENIMIENTO:* ${vehicle.cuotaMantenimiento || 'Pendiente'}\n📅 Vence Mantenimiento: ${vehicle.mantenimientoVence || 'N/D'}\n\n⚠️ *Reporte:* ${type}\n\n_Favor moderador validar estas cuotas y vencimientos._`;
+    window.open(`https://wa.me/595993471667?text=${encodeURIComponent(waText)}`, '_blank');
+  };
 
   if (selectedContract) {
     return (
-      <div className="space-y-8 animate-fadeIn">
-        <button onClick={() => setSelectedContract(null)} className="flex items-center gap-3 px-8 py-4 bg-white border border-gray-100 rounded-2xl text-bordeaux-800 font-black text-[10px] uppercase tracking-[0.4em] hover:bg-gray-50 transition-all shadow-sm">
-          <ArrowRight className="rotate-180" size={18} /> Volver
-        </button>
-        <ContractDocument vehicle={selectedContract.veh} data={selectedContract.res} days={3} totalPYG={selectedContract.res.total * exchangeRate} signature={`Admin JM - Verified Console`} />
+      <div className="space-y-6 animate-fadeIn">
+        <button onClick={() => setSelectedContract(null)} className="flex items-center gap-3 px-6 py-3 bg-white border border-gray-100 rounded-xl text-bordeaux-800 font-bold text-[10px] uppercase"><ArrowRight className="rotate-180" size={16}/> Volver</button>
+        <ContractDocument vehicle={selectedContract.veh} data={selectedContract.res} days={1} totalPYG={selectedContract.res.total * exchangeRate} />
       </div>
     );
   }
 
   return (
-    <div className="space-y-12 animate-fadeIn pb-32 max-w-full">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-10 border-b border-gray-100 pb-12">
-        <div className="space-y-6">
-          <div className="inline-flex items-center gap-4 px-6 py-3 bg-bordeaux-950 text-gold rounded-2xl text-[10px] font-black uppercase tracking-[0.5em] shadow-2xl">
-            <ShieldCheck size={20} className="text-gold" /> JM CONSOLE HUB 2026
-          </div>
-          <h2 className="text-5xl lg:text-7xl font-serif font-bold text-bordeaux-950 tracking-tighter">Gestión Maestro</h2>
+    <div className="space-y-12 animate-fadeIn pb-24">
+      {/* Modal Carga Manual */}
+      {showManualEntry && (
+        <div className="fixed inset-0 z-[160] bg-bordeaux-950/90 backdrop-blur-xl flex items-center justify-center p-6">
+          <form onSubmit={handleManualSubmit} className="bg-white rounded-[3rem] w-full max-w-xl p-10 space-y-6 animate-slideUp border border-white/20 shadow-2xl relative">
+             <button type="button" onClick={() => setShowManualEntry(false)} className="absolute top-8 right-8 p-2 bg-gray-100 rounded-full text-gray-400 hover:text-red-600"><X size={20}/></button>
+             <h3 className="text-2xl font-serif font-bold text-bordeaux-950">Cargar Contrato Manual</h3>
+             <div className="space-y-4">
+                <input required type="text" placeholder="Nombre Cliente" value={manualData.cliente} onChange={e => setManualData({...manualData, cliente: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold outline-none focus:ring-2 focus:ring-bordeaux-800" />
+                <div className="grid grid-cols-2 gap-4">
+                  <input type="text" placeholder="CI / Documento" value={manualData.ci} onChange={e => setManualData({...manualData, ci: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold outline-none" />
+                  <input type="tel" placeholder="WhatsApp" value={manualData.celular} onChange={e => setManualData({...manualData, celular: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold outline-none" />
+                </div>
+                <select required value={manualData.auto} onChange={e => setManualData({...manualData, auto: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold outline-none">
+                  <option value="">Seleccionar Unidad...</option>
+                  {flota.map(v => <option key={v.id} value={v.nombre}>{v.nombre} ({v.placa})</option>)}
+                </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-gray-400 uppercase ml-2">Salida</label>
+                    <input required type="date" value={manualData.inicio} onChange={e => setManualData({...manualData, inicio: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-gray-400 uppercase ml-2">Retorno</label>
+                    <input required type="date" value={manualData.fin} onChange={e => setManualData({...manualData, fin: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold outline-none" />
+                  </div>
+                </div>
+                <input type="number" placeholder="Monto Total (R$)" value={manualData.total} onChange={e => setManualData({...manualData, total: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border-0 font-bold outline-none" />
+             </div>
+             <button type="submit" className="w-full py-5 bg-bordeaux-800 text-white rounded-[2rem] font-black text-[11px] uppercase tracking-widest hover:bg-bordeaux-950 shadow-xl transition-all">Validar y Bloquear Calendario</button>
+          </form>
         </div>
-        <button onClick={onSyncSheet} disabled={isSyncing} className="flex items-center gap-4 px-10 py-5 bg-white border border-gray-100 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.3em] shadow-xl hover:bg-gray-50 active:scale-95 transition-all">
-          <RefreshCw size={22} className={isSyncing ? 'animate-spin' : ''} /> {isSyncing ? 'Sincronizando' : 'Refrescar DB'}
-        </button>
+      )}
+
+      {/* Modal de Intercambio */}
+      {swappingResId && (
+        <div className="fixed inset-0 z-[150] bg-bordeaux-950/80 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="bg-white rounded-[3rem] w-full max-w-2xl p-10 space-y-8 animate-slideUp border border-white/20 shadow-2xl">
+            <div className="flex justify-between items-center">
+               <h3 className="text-2xl font-serif font-bold text-bordeaux-950">Seleccionar Nueva Unidad</h3>
+               <button onClick={() => setSwappingResId(null)} className="p-2 bg-gray-50 rounded-full"><UserX size={20}/></button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto airbnb-scrollbar">
+               {flota.map(v => (
+                 <button key={v.id} onClick={() => swapVehicle(swappingResId, v.nombre)} className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl hover:bg-bordeaux-800 hover:text-white transition-all group border border-gray-100">
+                    <img src={v.img} className="w-16 h-12 object-contain group-hover:invert transition-all" />
+                    <div className="text-left">
+                       <p className="font-bold text-xs uppercase">{v.nombre}</p>
+                       <p className="text-[10px] opacity-60 uppercase">{v.placa}</p>
+                    </div>
+                 </button>
+               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header Panel */}
+      <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-b border-gray-100 pb-10">
+        <div className="space-y-4">
+          <div className="inline-flex items-center gap-3 px-4 py-2 bg-bordeaux-950 text-gold rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl"><ShieldCheck size={16}/> JM INTELLIGENCE HUB</div>
+          <h2 className="text-4xl md:text-6xl font-serif font-bold text-bordeaux-950">Master Console</h2>
+        </div>
+        <div className="flex gap-4">
+           <button onClick={() => setShowManualEntry(true)} className="px-8 py-4 bg-white border-2 border-bordeaux-800 text-bordeaux-800 rounded-2xl font-black text-[10px] uppercase flex items-center gap-3 hover:bg-bordeaux-50 shadow-xl transition-all">
+            <PlusCircle size={18}/> Cargar Histórico
+          </button>
+          <button onClick={onSyncSheet} disabled={isSyncing} className="px-8 py-4 bg-bordeaux-800 text-white rounded-2xl font-black text-[10px] uppercase flex items-center gap-3 hover:bg-bordeaux-950 shadow-xl transition-all">
+            <RefreshCw className={isSyncing ? 'animate-spin' : ''} size={18}/> {isSyncing ? 'Sincronizando...' : 'Actualizar Cloud'}
+          </button>
+        </div>
       </div>
 
-      <div className="flex bg-gray-50/50 p-2 rounded-[3rem] border border-gray-100 overflow-x-auto airbnb-scrollbar">
-        {tabs.map((tab) => (
-          <button key={tab.id} onClick={() => setActiveSection(tab.id as any)} className={`relative flex items-center gap-4 px-10 py-5 rounded-[2.5rem] text-[10px] font-black uppercase tracking-[0.4em] transition-all duration-500 whitespace-nowrap ${activeSection === tab.id ? 'text-white' : 'text-gray-400 hover:text-bordeaux-800'}`}>
-            {activeSection === tab.id && <div className="absolute inset-0 bordeaux-gradient z-0 rounded-[2.5rem] shadow-xl animate-fadeIn"></div>}
-            <tab.icon size={18} className="relative z-10" />
-            <span className="relative z-10">{tab.label}</span>
+      {/* Navegación Panel */}
+      <div className="flex bg-gray-50 p-1.5 rounded-[2.5rem] border border-gray-100 overflow-x-auto airbnb-scrollbar">
+        {[
+          { id: 'resumen', label: 'Dashboard', icon: TrendingUp },
+          { id: 'flota', label: 'Status & Desgaste', icon: Car },
+          { id: 'registros', label: 'Admisión VIP', icon: ShieldCheck }
+        ].map(tab => (
+          <button key={tab.id} onClick={() => setActiveSection(tab.id as any)} className={`relative flex items-center gap-4 px-10 py-4 rounded-[2rem] text-[10px] font-black uppercase tracking-widest transition-all ${activeSection === tab.id ? 'text-white' : 'text-gray-400 hover:text-bordeaux-800'}`}>
+            {activeSection === tab.id && <div className="absolute inset-0 bordeaux-gradient rounded-[2rem] shadow-lg animate-fadeIn"></div>}
+            <tab.icon size={18} className="relative z-10" /><span className="relative z-10">{tab.label}</span>
           </button>
         ))}
       </div>
 
-      <div className="mt-12">
+      <div className="mt-8">
         {activeSection === 'resumen' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-            {[
-              { label: 'Ingresos Totales', val: `R$ ${totalIngresos.toLocaleString()}`, sub: `Gs. ${(totalIngresos * exchangeRate).toLocaleString()}`, icon: Wallet, color: 'text-bordeaux-800' },
-              { label: 'Unidades Activas', val: flota.length, sub: 'Flota 2026', icon: Car, color: 'text-gold' },
-              { label: 'Gastos Operativos', val: `R$ ${totalGastos.toLocaleString()}`, sub: 'Mantenimiento y Seguros', icon: Receipt, color: 'text-red-600' },
-              { label: 'Incidentes', val: breakdowns.length, sub: 'Taller / Soporte', icon: AlertTriangle, color: 'text-orange-600' }
-            ].map((stat, idx) => (
-              <div key={idx} className="bg-white p-10 rounded-[3.5rem] border border-gray-100 shadow-sm space-y-4 hover:shadow-xl transition-all">
-                <stat.icon className={`${stat.color}`} size={32} />
+          <div className="space-y-12">
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-2xl space-y-6 group hover:-translate-y-2 transition-transform">
+                <div className="w-14 h-14 bg-bordeaux-50 rounded-2xl flex items-center justify-center text-bordeaux-800 group-hover:bg-bordeaux-800 group-hover:text-white transition-colors"><Wallet size={28} /></div>
                 <div>
-                  <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">{stat.label}</p>
-                  <h4 className="text-3xl font-black text-bordeaux-950">{stat.val}</h4>
-                  <p className="text-[10px] font-bold text-gold uppercase">{stat.sub}</p>
+                  <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-1">Ingresos Totales (BRL/PYG)</p>
+                  <h4 className="text-3xl font-black text-bordeaux-950">R$ {totalIngresos.toLocaleString()}</h4>
+                  <p className="text-sm font-bold text-gold">Gs. {(totalIngresos * exchangeRate).toLocaleString()}</p>
                 </div>
               </div>
-            ))}
+
+              <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-2xl space-y-6 group hover:-translate-y-2 transition-transform">
+                <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center text-red-600 group-hover:bg-red-600 group-hover:text-white transition-colors"><Activity size={28} /></div>
+                <div>
+                  <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-1">Flota Operativa</p>
+                  <h4 className="text-3xl font-black text-red-950">{flota.length} Unidades</h4>
+                  <p className="text-sm font-bold text-red-400">Control de Desgaste Activo</p>
+                </div>
+              </div>
+
+              <div className="bg-bordeaux-950 p-10 rounded-[3rem] border border-white/5 shadow-2xl space-y-6 group hover:-translate-y-2 transition-transform">
+                <div className="w-14 h-14 bg-gold rounded-2xl flex items-center justify-center text-bordeaux-950 group-hover:scale-110 transition-transform"><TrendingUp size={28} /></div>
+                <div className="text-white">
+                  <p className="text-[10px] font-black text-gold uppercase tracking-widest mb-1">Margen de Operación</p>
+                  <h4 className="text-3xl font-black">{margenUtilidad.toFixed(1)}%</h4>
+                  <p className="text-sm font-bold opacity-60">Optimización Premium</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-xl space-y-8">
+                <div className="flex justify-between items-center">
+                   <h3 className="text-xl font-serif font-bold text-bordeaux-950 flex items-center gap-3"><LineIcon size={20} className="text-gold"/> Rendimiento Mensual</h3>
+                   <span className="text-[10px] font-black text-gray-300 uppercase">Valores en R$</span>
+                </div>
+                <div className="h-[300px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={performanceTrendData}>
+                      <defs>
+                        <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#800000" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#800000" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 'bold'}} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 'bold'}} />
+                      <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} />
+                      <Area type="monotone" dataKey="ingresos" stroke="#800000" fillOpacity={1} fill="url(#colorIngresos)" strokeWidth={3} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-xl space-y-8">
+                <div className="flex justify-between items-center">
+                   <h3 className="text-xl font-serif font-bold text-bordeaux-950 flex items-center gap-3"><PieIcon size={20} className="text-gold"/> Profit Share por Unidad</h3>
+                   <span className="text-[10px] font-black text-gray-300 uppercase">Cash Flow Distribution</span>
+                </div>
+                <div className="h-[300px] w-full flex flex-col md:flex-row items-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={revenueByVehicleData} innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value">
+                        {revenueByVehicleData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-2 min-w-[150px]">
+                     {revenueByVehicleData.slice(0, 4).map((item, idx) => (
+                       <div key={idx} className="flex items-center gap-3">
+                          <div className="w-2 h-2 rounded-full" style={{backgroundColor: COLORS[idx]}}></div>
+                          <p className="text-[10px] font-black uppercase text-gray-500">{item.name}</p>
+                       </div>
+                     ))}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
         {activeSection === 'flota' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-slideUp">
-            {flota.map(v => (
-              <div key={v.id} className="bg-white rounded-[3.5rem] border border-gray-100 overflow-hidden shadow-sm flex flex-col md:flex-row hover:shadow-xl transition-all">
-                <div className="md:w-2/5 aspect-video md:aspect-auto bg-gray-50 p-8 flex items-center justify-center">
-                   <img src={v.img} className="max-w-[120%] object-contain mix-blend-multiply" alt={v.nombre} />
-                </div>
-                <div className="md:w-3/5 p-10 space-y-6">
-                   <div>
-                      <h4 className="text-2xl font-serif font-bold text-bordeaux-950">{v.nombre}</h4>
-                      <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em]">{v.placa}</p>
-                   </div>
-                   <div className="flex gap-4">
-                      <button className="flex-1 py-4 bg-gray-50 text-bordeaux-950 rounded-2xl font-black text-[9px] uppercase tracking-widest hover:bg-bordeaux-50 transition-all">Editar Ficha</button>
-                      <button className="flex-1 py-4 bg-gray-50 text-bordeaux-950 rounded-2xl font-black text-[9px] uppercase tracking-widest hover:bg-bordeaux-50 transition-all">Ver Historial</button>
-                   </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {flota.map(v => {
+              const wear = calculateWearIndex(v);
+              const totalVehRev = reservations.filter(r => r.auto.toLowerCase().includes(v.nombre.toLowerCase()) && r.status !== 'Cancelled').reduce((s, r) => s + r.total, 0);
+              return (
+                <div key={v.id} className="bg-white p-8 rounded-[3rem] border border-gray-100 shadow-xl space-y-6 relative overflow-hidden group">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-4">
+                      <img src={v.img} className="w-20 h-20 object-contain mix-blend-multiply group-hover:scale-110 transition-transform" />
+                      <div>
+                        <h4 className="font-bold text-xl text-bordeaux-950">{v.nombre}</h4>
+                        <span className="text-[10px] font-black text-gold tracking-[0.4em] uppercase">{v.placa}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                       <p className="text-[8px] font-black text-gray-300 uppercase">Rentabilidad</p>
+                       <p className="text-sm font-black text-green-600">R$ {totalVehRev.toLocaleString()}</p>
+                    </div>
+                  </div>
 
-        {activeSection === 'monitoreo' && (
-          <div className="space-y-12 animate-slideUp">
-             <div className="bg-white p-12 rounded-[4rem] border border-gray-100 shadow-2xl">
-                <div className="flex items-center gap-6 mb-12">
-                   <Activity size={40} className="text-bordeaux-800" />
-                   <div>
-                      <h3 className="text-3xl font-serif font-bold text-bordeaux-950">Monitoreo Técnico Maestro</h3>
-                      <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Alertas de Mantenimiento y Seguros</p>
-                   </div>
-                </div>
-                <div className="grid grid-cols-1 gap-6">
-                   {flota.map(v => (
-                     <div key={v.id} className="flex items-center justify-between p-8 bg-gray-50 rounded-[2.5rem] border border-gray-100">
-                        <div className="flex items-center gap-8">
-                           <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                              <img src={v.img} className="h-10 w-auto mix-blend-multiply" alt="V" />
-                           </div>
-                           <div>
-                              <p className="text-sm font-bold text-bordeaux-950">{v.nombre}</p>
-                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{v.placa}</p>
-                           </div>
+                  {/* Monitor de Desgaste Visual */}
+                  <div className="space-y-3 bg-gray-50 p-6 rounded-3xl">
+                    <div className="flex justify-between items-center">
+                       <p className="text-[9px] font-black text-bordeaux-950 uppercase tracking-widest flex items-center gap-2"><Activity size={14} className="text-gold"/> Índice de Desgaste Operativo</p>
+                       <span className={`text-[10px] font-black ${wear > 75 ? 'text-red-600' : 'text-bordeaux-800'}`}>{wear}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                       <div className={`h-full transition-all duration-1000 ${getWearColor(wear)}`} style={{width: `${wear}%`}}></div>
+                    </div>
+                  </div>
+
+                  {/* Edición de Cuotas y Vencimientos */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* SEGURO */}
+                    <div className="p-4 rounded-2xl border border-gray-100 space-y-3 bg-bordeaux-50/30">
+                      <p className="text-[9px] font-black uppercase text-gray-400 tracking-widest flex items-center gap-2"><CreditCard size={10}/> Seguro</p>
+                      
+                      {/* Monto Cuota Seguro */}
+                      <div className="space-y-1">
+                        <p className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">Monto Cuota</p>
+                        <div className="flex items-center justify-between">
+                           {editingId === `cseg-${v.id}` ? (
+                             <input type="text" defaultValue={v.cuotaSeguro} onBlur={(e) => handleUpdateVehicle(v.id, {cuotaSeguro: e.target.value})} className="w-full text-xs font-black bg-transparent border-b border-gold outline-none" autoFocus />
+                           ) : (
+                             <p className="text-xs font-black text-bordeaux-950 cursor-pointer" onClick={() => setEditingId(`cseg-${v.id}`)}>{v.cuotaSeguro || 'Definir...'}</p>
+                           )}
+                           <Edit3 size={10} className="opacity-30" />
                         </div>
-                        <div className="flex items-center gap-12">
-                           <div className="text-right">
-                              <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest">Prox. Service</p>
-                              <p className="text-sm font-bold text-bordeaux-800">{v.mantenimientoVence || 'Pendiente'}</p>
-                           </div>
-                           <div className="text-right">
-                              <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest">Seguro Vence</p>
-                              <p className="text-sm font-bold text-gold">{v.seguroVence || 'Pendiente'}</p>
-                           </div>
-                           <div className={`px-6 py-2 rounded-full text-[9px] font-black uppercase tracking-widest ${v.estado === 'Disponible' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                              {v.estado}
-                           </div>
+                      </div>
+
+                      {/* Vencimiento Seguro */}
+                      <div className="space-y-1 pt-1 border-t border-bordeaux-100/50">
+                        <p className="text-[8px] font-black text-gray-400 uppercase tracking-tighter flex items-center gap-1"><CalendarDays size={8}/> Vencimiento</p>
+                        <div className="flex items-center justify-between">
+                           {editingId === `vseg-${v.id}` ? (
+                             <input type="text" placeholder="DD/MM/YYYY" defaultValue={v.seguroVence} onBlur={(e) => handleUpdateVehicle(v.id, {seguroVence: e.target.value})} className="w-full text-[10px] font-black bg-transparent border-b border-gold outline-none" autoFocus />
+                           ) : (
+                             <p className="text-[10px] font-bold text-bordeaux-800 cursor-pointer" onClick={() => setEditingId(`vseg-${v.id}`)}>{v.seguroVence || 'N/D'}</p>
+                           )}
+                           <Edit3 size={10} className="opacity-30" />
                         </div>
-                     </div>
-                   ))}
+                      </div>
+                    </div>
+
+                    {/* MANTENIMIENTO */}
+                    <div className="p-4 rounded-2xl border border-gray-100 space-y-3 bg-gray-50/50">
+                      <p className="text-[9px] font-black uppercase text-gray-400 tracking-widest flex items-center gap-2"><DollarSign size={10}/> Mantenimiento</p>
+                      
+                      {/* Monto Cuota Mant */}
+                      <div className="space-y-1">
+                        <p className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">Monto Cuota</p>
+                        <div className="flex items-center justify-between">
+                           {editingId === `cmnt-${v.id}` ? (
+                             <input type="text" defaultValue={v.cuotaMantenimiento} onBlur={(e) => handleUpdateVehicle(v.id, {cuotaMantenimiento: e.target.value})} className="w-full text-xs font-black bg-transparent border-b border-gold outline-none" autoFocus />
+                           ) : (
+                             <p className="text-xs font-black text-bordeaux-950 cursor-pointer" onClick={() => setEditingId(`cmnt-${v.id}`)}>{v.cuotaMantenimiento || 'Definir...'}</p>
+                           )}
+                           <Edit3 size={10} className="opacity-30" />
+                        </div>
+                      </div>
+
+                      {/* Vencimiento Mant */}
+                      <div className="space-y-1 pt-1 border-t border-gray-200">
+                        <p className="text-[8px] font-black text-gray-400 uppercase tracking-tighter flex items-center gap-1"><CalendarDays size={8}/> Vencimiento</p>
+                        <div className="flex items-center justify-between">
+                           {editingId === `vmnt-${v.id}` ? (
+                             <input type="text" placeholder="DD/MM/YYYY" defaultValue={v.mantenimientoVence} onBlur={(e) => handleUpdateVehicle(v.id, {mantenimientoVence: e.target.value})} className="w-full text-[10px] font-black bg-transparent border-b border-gold outline-none" autoFocus />
+                           ) : (
+                             <p className="text-[10px] font-bold text-bordeaux-800 cursor-pointer" onClick={() => setEditingId(`vmnt-${v.id}`)}>{v.mantenimientoVence || 'N/D'}</p>
+                           )}
+                           <Edit3 size={10} className="opacity-30" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <button onClick={() => sendTechnicalAlert(v, 'Actualización de Status, Cuotas y Vencimientos')} className="w-full py-4 bg-bordeaux-800 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.4em] shadow-lg hover:bg-bordeaux-950 transition-all">Reportar al Moderador</button>
                 </div>
-             </div>
+              );
+            })}
           </div>
         )}
 
         {activeSection === 'registros' && (
-          <div className="bg-white rounded-[4rem] border border-gray-100 shadow-2xl overflow-hidden animate-slideUp">
-            <div className="p-10 border-b border-gray-100 flex items-center justify-between bg-bordeaux-50/20">
-               <div>
-                  <h3 className="text-2xl font-serif font-bold text-bordeaux-950">Registro de Alquileres</h3>
-                  <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em]">Historial Corporativo JM</p>
-               </div>
-               <div className="relative group">
-                  <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-bordeaux-800 transition-all" size={20} />
-                  <input 
-                    type="text" 
-                    placeholder="Filtrar por nombre o CI..." 
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-16 pr-8 py-4 bg-white border border-gray-100 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux-800 shadow-inner w-72"
-                  />
-               </div>
+          <div className="bg-white rounded-[3rem] border border-gray-100 shadow-2xl overflow-hidden">
+            <div className="p-10 border-b border-gray-100 bg-bordeaux-50/20 flex justify-between items-center">
+              <div><h3 className="text-2xl font-serif font-bold text-bordeaux-950">Admisión VIP & Calendario</h3><p className="text-[10px] font-black text-gold uppercase tracking-[0.4em]">Gestión de flota e intercambios</p></div>
+              <div className="relative flex items-center gap-4">
+                 <div className="relative">
+                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                   <input type="text" placeholder="Buscar cliente o unidad..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-12 pr-6 py-3 bg-white border border-gray-200 rounded-xl outline-none text-sm font-bold w-64 shadow-inner" />
+                 </div>
+              </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto airbnb-scrollbar">
               <table className="w-full text-left">
-                <thead className="bg-bordeaux-950">
+                <thead className="bg-bordeaux-950 text-gold text-[10px] font-black uppercase tracking-widest">
                   <tr>
-                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Código JM</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Titular Arrendatario</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Unidad Asignada</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Liquidación BRL</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] text-center">Gestión</th>
+                    <th className="px-8 py-6">ID / Cliente</th>
+                    <th className="px-8 py-6">Unidad</th>
+                    <th className="px-8 py-6">Entrega</th>
+                    <th className="px-8 py-6">Retorno</th>
+                    <th className="px-8 py-6 text-center">Calendario</th>
+                    <th className="px-8 py-6 text-center">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {filteredReservations.map((res) => (
-                    <tr key={res.id} className="hover:bg-bordeaux-50/30 transition-all group">
-                      <td className="px-10 py-8">
-                         <span className="text-[11px] font-black text-bordeaux-900 bg-bordeaux-50 px-4 py-2 rounded-xl border border-bordeaux-100 uppercase">#JM-{res.id.slice(-6)}</span>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredReservations.map(res => (
+                    <tr key={res.id} className="hover:bg-bordeaux-50 transition-all group">
+                      <td className="px-8 py-6">
+                        <p className="text-[9px] font-black text-gold mb-1">#{res.id}</p>
+                        <p className="font-bold text-gray-900 uppercase">{res.cliente}</p>
+                        <p className="text-[10px] text-gray-400">{res.ci}</p>
                       </td>
-                      <td className="px-10 py-8">
-                         <div className="space-y-1">
-                            <p className="text-sm font-bold text-gray-900 uppercase">{res.cliente}</p>
-                            <p className="text-[10px] font-black text-gray-400 tracking-widest uppercase">DOC: {res.ci}</p>
-                         </div>
+                      <td className="px-8 py-6">
+                        <div className="flex items-center gap-3">
+                           <p className="text-sm font-black text-bordeaux-900 uppercase">{res.auto}</p>
+                           <button onClick={() => setSwappingResId(res.id)} className="p-2 bg-white rounded-lg border border-gray-100 opacity-0 group-hover:opacity-100 transition-all text-bordeaux-800 hover:bg-bordeaux-800 hover:text-white shadow-sm" title="Cambiar Unidad"><ArrowLeftRight size={14} /></button>
+                        </div>
                       </td>
-                      <td className="px-10 py-8">
-                         <div className="flex items-center gap-4">
-                            <Car size={16} className="text-gold" />
-                            <span className="text-sm font-bold text-gray-700 uppercase">{res.auto}</span>
-                         </div>
+                      <td className="px-8 py-6"><div className="flex items-center gap-2 text-gray-700 font-bold text-xs uppercase"><Clock size={12} className="text-gold" /> {res.inicio}</div></td>
+                      <td className="px-8 py-6"><div className="flex items-center gap-2 text-gray-700 font-bold text-xs uppercase"><Clock size={12} className="text-gold" /> {res.fin}</div></td>
+                      <td className="px-8 py-6 text-center">
+                        <button onClick={() => updateResStatus(res.id, res.status, res.admissionStatus!, !(res.includeInCalendar ?? true))} className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${res.includeInCalendar ?? true ? 'bg-bordeaux-800 text-white shadow-lg' : 'bg-gray-100 text-gray-400'}`}>
+                          {res.includeInCalendar ?? true ? <><ToggleRight size={18}/> Cargado</> : <><ToggleLeft size={18}/> No Cargar</>}
+                        </button>
                       </td>
-                      <td className="px-10 py-8 text-sm font-black text-bordeaux-800">
-                         R$ {res.total.toLocaleString()}
-                      </td>
-                      <td className="px-10 py-8">
-                        <div className="flex justify-center gap-4">
-                          <button 
-                            title="Ver Contrato"
-                            onClick={() => {
-                               const veh = flota.find(v => v.nombre === res.auto) || flota[0];
-                               setSelectedContract({res, veh});
-                            }}
-                            className="p-4 bg-gray-50 text-bordeaux-900 rounded-2xl hover:bg-bordeaux-950 hover:text-white transition-all shadow-sm border border-gray-100"
-                          >
-                            <FileText size={18} />
-                          </button>
-                          <button className="p-4 bg-gray-50 text-red-600 rounded-2xl hover:bg-red-600 hover:text-white transition-all shadow-sm border border-gray-100"><Trash2 size={18} /></button>
+                      <td className="px-8 py-6">
+                        <div className="flex justify-center gap-3">
+                          <button onClick={() => updateResStatus(res.id, 'Confirmed', 'Approved')} className={`p-3 rounded-xl transition-all ${res.status === 'Confirmed' ? 'bg-green-600 text-white shadow-lg' : 'bg-gray-50 text-gray-300 hover:text-green-600'}`} title="Aprobar"><UserCheck size={18}/></button>
+                          <button onClick={() => deleteReservation(res.id)} className="p-3 rounded-xl bg-gray-50 text-gray-300 hover:text-red-600 hover:bg-red-50 transition-all" title="Eliminar Permanente"><Trash2 size={18}/></button>
                         </div>
                       </td>
                     </tr>
@@ -256,70 +526,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 </tbody>
               </table>
             </div>
-            {filteredReservations.length === 0 && (
-              <div className="py-24 text-center">
-                 <p className="text-gray-400 font-bold uppercase tracking-widest">No se encontraron registros de alquiler.</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeSection === 'gastos' && (
-          <div className="bg-white rounded-[4rem] border border-gray-100 shadow-2xl overflow-hidden animate-slideUp">
-            <div className="p-10 border-b border-gray-100 flex items-center justify-between bg-red-50/20">
-               <div>
-                  <h3 className="text-2xl font-serif font-bold text-bordeaux-950">Control de Egresos</h3>
-                  <p className="text-[10px] font-black text-red-600 uppercase tracking-[0.4em]">Finanzas Operativas JM</p>
-               </div>
-               <button className="flex items-center gap-4 px-8 py-4 bg-bordeaux-950 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-black transition-all">
-                  <Plus size={18} className="text-gold" /> Cargar Gasto
-               </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-bordeaux-950">
-                  <tr>
-                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Fecha</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Concepto del Gasto</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Categoría</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] border-r border-white/5">Monto BRL</th>
-                    <th className="px-10 py-8 text-[10px] font-black text-gold uppercase tracking-[0.3em] text-center">Control</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {gastos.length > 0 ? gastos.map((g) => (
-                    <tr key={g.id} className="hover:bg-red-50/30 transition-all group">
-                      <td className="px-10 py-8 text-sm font-bold text-gray-400">{g.fecha}</td>
-                      <td className="px-10 py-8 text-sm font-bold text-gray-900 uppercase">{g.concepto}</td>
-                      <td className="px-10 py-8">
-                         <span className="text-[10px] font-black text-red-800 bg-red-50 px-4 py-2 rounded-xl border border-red-100 uppercase tracking-wider">{g.categoria}</span>
-                      </td>
-                      <td className="px-10 py-8 text-sm font-black text-red-600">R$ {g.monto.toLocaleString()}</td>
-                      <td className="px-10 py-8">
-                        <div className="flex justify-center">
-                          <button className="p-4 bg-gray-50 text-red-600 rounded-2xl hover:bg-red-600 hover:text-white transition-all shadow-sm border border-gray-100"><Trash2 size={18} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={5} className="py-24 text-center">
-                         <div className="flex flex-col items-center gap-4">
-                            <Receipt size={48} className="text-gray-100" />
-                            <p className="text-gray-400 font-bold uppercase tracking-widest">Sin gastos registrados en el periodo.</p>
-                         </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {activeSection === 'sheet' && (
-          <div className="bg-white rounded-[4.5rem] border-[12px] border-gray-50 shadow-2xl overflow-hidden h-[850px] w-full animate-fadeIn">
-             <iframe src={`${GOOGLE_SHEET_EMBED_URL}&rm=minimal`} className="w-full h-full border-none" title="Google Sheets"></iframe>
           </div>
         )}
       </div>

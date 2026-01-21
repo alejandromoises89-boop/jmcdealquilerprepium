@@ -78,7 +78,8 @@ const VehicleGrid: React.FC<VehicleGridProps> = ({ flota, exchangeRate, reservat
 
   return (
     <div className="space-y-16">
-      <div className="sticky top-24 z-40 bg-white/90 backdrop-blur-2xl p-6 md:p-8 rounded-[3rem] border border-gray-100 shadow-2xl shadow-bordeaux-900/5 space-y-6 animate-slideUp">
+      {/* Barra de filtros: Quitado 'sticky top-24 z-40' para que corra con la página */}
+      <div className="relative z-10 bg-white/90 backdrop-blur-2xl p-6 md:p-8 rounded-[3rem] border border-gray-100 shadow-2xl shadow-bordeaux-900/5 space-y-6 animate-slideUp">
         <div className="flex flex-col xl:flex-row gap-6 items-center justify-between">
           <div className="flex flex-col md:flex-row gap-4 w-full md:max-w-3xl">
             <div className="relative flex-1 group">
@@ -92,7 +93,6 @@ const VehicleGrid: React.FC<VehicleGridProps> = ({ flota, exchangeRate, reservat
               />
             </div>
             
-            {/* Nuevo Filtro por Placa */}
             <div className="relative w-full md:w-64 group">
               <CreditCard className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-bordeaux-800 transition-colors" size={20} />
               <input 

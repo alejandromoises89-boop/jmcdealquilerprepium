@@ -52,9 +52,9 @@ export const INITIAL_FLOTA: Vehicle[] = [
   },
   {
     id: '5',
-    nombre: "Toyota Wish 2009 Gris",
+    nombre: "Toyota Wish Gris",
     precio: 230.0,
-    img: "https://i.ibb.co/XrbktMmw/image.jpg",
+    img: "https://i.ibb.co/KYcHVmZ/Toyota-Wish-2009.jpg",
     estado: "Disponible",
     placa: "AAVP924",
     color: "Gris Plata",
@@ -125,6 +125,8 @@ export const INITIAL_FLOTA: Vehicle[] = [
 ];
 
 export const GOOGLE_SHEET_ID = "1cGvNGAtCh84Gvs3-x7n0I2W-rqbG3W2z";
+// URL de despliegue de Apps Script para recibir POST requests
+export const GOOGLE_SHEET_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbz_XXXXXXXXX/exec"; 
 export const GOOGLE_SHEET_RESERVATIONS_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Reservas`;
 export const GOOGLE_SHEET_EMBED_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit?usp=sharing`;
 

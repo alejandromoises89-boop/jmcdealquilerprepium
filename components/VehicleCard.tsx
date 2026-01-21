@@ -61,14 +61,16 @@ const VehicleCard: React.FC<VehicleCardProps> = ({ vehicle, exchangeRate, reserv
       }`}
       onClick={handleBooking}
     >
-      <div className="relative aspect-[16/10] bg-gray-50/10 overflow-hidden flex items-center justify-center">
-        <div className="absolute inset-0 bordeaux-gradient opacity-0 group-hover:opacity-[0.04] transition-opacity duration-1000 ease-in-out"></div>
-        <div className="relative w-full h-full flex items-center justify-center p-6 md:p-10">
-           <div className="absolute bottom-[10%] w-[75%] h-[8%] bg-black/5 blur-[20px] rounded-full scale-x-110 group-hover:scale-x-125 transition-transform duration-1000 ease-out"></div>
+      {/* Contenedor de Imagen Uniforme y Cuadrado */}
+      <div className="relative aspect-square bg-white overflow-hidden flex items-center justify-center p-6">
+        <div className="absolute inset-0 bordeaux-gradient opacity-0 group-hover:opacity-[0.02] transition-opacity duration-1000 ease-in-out"></div>
+        <div className="relative w-full h-full flex items-center justify-center">
+           {/* Sombra de suelo */}
+           <div className="absolute bottom-[10%] w-[85%] h-[8%] bg-black/5 blur-[20px] rounded-full scale-x-110 group-hover:scale-x-125 transition-transform duration-1000 ease-out"></div>
            <img 
             src={vehicle.img} 
             alt={vehicle.nombre} 
-            className="max-w-full max-h-full object-contain mix-blend-multiply group-hover:scale-110 transition-transform duration-1000 ease-out relative z-10 drop-shadow-2xl"
+            className="w-full h-full object-contain mix-blend-multiply group-hover:scale-110 transition-transform duration-1000 ease-out relative z-10 drop-shadow-xl"
           />
         </div>
         
@@ -93,7 +95,7 @@ const VehicleCard: React.FC<VehicleCardProps> = ({ vehicle, exchangeRate, reserv
         </button>
       </div>
 
-      <div className="p-6 md:p-10 space-y-6 md:space-y-8">
+      <div className="p-6 md:p-10 space-y-6 md:space-y-8 bg-white border-t border-gray-50">
         <div className="flex justify-between items-start">
           <div className="space-y-3">
             <h3 className="text-xl md:text-3xl font-serif font-bold text-bordeaux-950 leading-tight group-hover:text-bordeaux-800 transition-colors duration-500">
