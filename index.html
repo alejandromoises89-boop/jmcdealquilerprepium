@@ -1,0 +1,94 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JM Alquiler de Vehículos | Premium Fleet</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        bordeaux: {
+                            50: '#fdf2f2',
+                            100: '#fbe4e4',
+                            200: '#f7cdcd',
+                            300: '#f1a9a9',
+                            400: '#e57777',
+                            500: '#d14d4d',
+                            600: '#b43535',
+                            700: '#972929',
+                            800: '#800000',
+                            900: '#6a1d1d',
+                            950: '#3a0b0b',
+                        },
+                        gold: '#D4AF37',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Playfair Display', 'serif'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'float': 'float 6s ease-in-out infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-10px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #ffffff;
+            color: #1a1a1a;
+            scroll-behavior: smooth;
+        }
+        .glass-morphism {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(128, 0, 0, 0.05);
+        }
+        .airbnb-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .airbnb-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .bordeaux-gradient {
+            background: linear-gradient(135deg, #800000 0%, #3a0b0b 100%);
+        }
+        .gold-shine {
+            background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.2), transparent);
+            background-size: 200% 100%;
+            animation: shine 3s infinite linear;
+        }
+        @keyframes shine {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+  }
+}
+</script>
+</head>
+<body>
+    <div id="root"></div>
+</body>
+</html>
