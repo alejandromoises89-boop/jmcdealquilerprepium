@@ -3,32 +3,6 @@ import { Vehicle } from './types';
 
 export const INITIAL_FLOTA: Vehicle[] = [
   {
-    id: '1',
-    nombre: "Hyundai Tucson Blanco",
-    precio: 260.0,
-    img: "https://i.ibb.co/rGJHxvbm/Tucson-sin-fondo.png",
-    estado: "Disponible",
-    placa: "AAVI502",
-    color: "Blanco",
-    specs: [
-      "Motor: 2.0 Turbo Diesel CRDi - Eficiencia y Potencia",
-      "Transmisión: Automática Secuencial H-Matic de 6 Velocidades",
-      "Seguridad: 6 Airbags, Frenos ABS + EBD, Control de Estabilidad VSC",
-      "Interior: Asientos de Cuero Premium con Ajuste Eléctrico",
-      "Tecnología: Pantalla Táctil 10.25' con Apple CarPlay & Android Auto",
-      "Confort: Techo Solar Panorámico, Climatizador Bi-zona",
-      "Extras: Sensores 360°, Cámara de Reversa Dinámica",
-      "Capacidad: Amplio Maletero de 513 litros"
-    ],
-    transmision: "Automático",
-    combustible: "Diesel",
-    asientos: 5,
-    tipo: 'SUV',
-    consumo: "7.8L/100km",
-    mantenimientoVence: "15/05/2026",
-    seguroVence: "12/12/2026"
-  },
-  {
     id: '2',
     nombre: "Toyota Vitz Blanco",
     precio: 195.0,
@@ -37,14 +11,12 @@ export const INITIAL_FLOTA: Vehicle[] = [
     placa: "AAVP719",
     color: "Blanco",
     specs: [
-      "Motor: 1.3L VVTi - Ultra Bajo Consumo",
+      "Motor: 1.3L VVTi - Eficiencia Japonesa",
       "Transmisión: Automática CVT Inteligente",
-      "Seguridad: Airbags Frontales y Cortina, Frenos ABS",
-      "Consumo: 18km/L en ciclo mixto - Ideal Ciudad",
-      "Tecnología: Radio Smart con Bluetooth y Mandos al Volante",
-      "Confort: Aire Acondicionado de Alta Capacidad",
-      "Extras: Sistema de Entrada Sin Llave (Smart Entry)",
-      "Maniobrabilidad: Radio de giro reducido para estacionamiento fácil"
+      "Consumo: 5.5L/100km (Eco Mode)",
+      "Seguridad: Doble Airbag + ABS",
+      "Confort: Aire Acondicionado High-Power",
+      "Multimedia: Radio Bluetooth + Hands-free"
     ],
     transmision: "Automático",
     combustible: "Nafta",
@@ -63,14 +35,12 @@ export const INITIAL_FLOTA: Vehicle[] = [
     placa: "AAOR725",
     color: "Negro",
     specs: [
-      "Motor: 1.3L VVTi - Tecnología ECO de Toyota",
-      "Transmisión: Automática Automática Secuencial",
-      "Estética: Interior Dark-Series Premium",
-      "Seguridad: Frenos con Asistencia de Frenado (BA)",
-      "Tecnología: Cámara de Retroceso con Guías Activas",
-      "Confort: Climatizador Digital Silencioso",
-      "Extras: Llantas de Aleación Deportivas Originales",
-      "Mantenimiento: Service recién realizado - Listo para Viajes"
+      "Motor: 1.3L VVTi - Edición Dark",
+      "Transmisión: Automática Secuencial",
+      "Consumo: 5.5L/100km",
+      "Interior: Tapizado Premium Oscuro",
+      "Tecnología: Cámara de Retroceso Activa",
+      "Extras: Llantas Deportivas Originales"
     ],
     transmision: "Automático",
     combustible: "Nafta",
@@ -81,6 +51,30 @@ export const INITIAL_FLOTA: Vehicle[] = [
     seguroVence: "01/10/2026"
   },
   {
+    id: '5',
+    nombre: "Toyota Wish 2009 Gris",
+    precio: 220.0,
+    img: "https://i.ibb.co/XrbktMmw/image.jpg",
+    estado: "Disponible",
+    placa: "AAVP924",
+    color: "Gris Plata",
+    specs: [
+      "Motor: 1.8L Valvematic - Potencia Familiar",
+      "Transmisión: Automática Inteligente",
+      "Capacidad: 7 Pasajeros Reales",
+      "Combustible: Nafta Super",
+      "Seguridad: 8 Airbags + Control de Estabilidad",
+      "Confort: Climatizador Bi-zona para 3 filas"
+    ],
+    transmision: "Automático",
+    combustible: "Nafta",
+    asientos: 7,
+    tipo: 'Familiar',
+    consumo: "8.5L/100km",
+    mantenimientoVence: "01/01/2026",
+    seguroVence: "01/01/2027"
+  },
+  {
     id: '4',
     nombre: "Toyota Voxy Gris",
     precio: 240.0,
@@ -89,14 +83,12 @@ export const INITIAL_FLOTA: Vehicle[] = [
     placa: "AAUG465",
     color: "Gris",
     specs: [
-      "Motor: 2.0L Dual VVTi - Potencia para 7 Personas",
-      "Configuración: 3 Filas de Asientos Reales",
-      "Puertas: Doble Puerta Lateral Eléctrica Corrediza",
-      "Seguridad: Sensores de Estacionamiento Delanteros y Traseros",
-      "Confort: Aire Acondicionado con Control Trasero Independiente",
-      "Interior: Asientos Ajustables con Modo Cama",
-      "Extras: Pantalla Multimedia para Pasajeros Traseros",
-      "Ideal para: Traslados de Ejecutivos o Grupos Familiares"
+      "Motor: 2.0L Dual VVTi - Alto Torque",
+      "Puertas: Doble Lateral Eléctrica",
+      "Capacidad: 7-8 Pasajeros Premium",
+      "Interior: Butacas Capitán Modular",
+      "Tecnología: Pantalla Multimedia Trasera",
+      "Ideal: Viajes Largos y Grupos VIP"
     ],
     transmision: "Automático",
     combustible: "Nafta",
@@ -107,30 +99,28 @@ export const INITIAL_FLOTA: Vehicle[] = [
     seguroVence: "22/09/2026"
   },
   {
-    id: '5',
-    nombre: "Toyota Wish 2010 Gris",
-    precio: 220.0,
-    img: "https://i.ibb.co/XrbktMmw/image.jpg", 
+    id: '1',
+    nombre: "Hyundai Tucson Blanco",
+    precio: 260.0,
+    img: "https://i.ibb.co/rGJHxvbm/Tucson-sin-fondo.png",
     estado: "Disponible",
-    placa: "AAXH123",
-    color: "Gris Plata",
+    placa: "AAVI502",
+    color: "Blanco",
     specs: [
-      "Motor: 1.8L Valvematic - Equilibrio entre Potencia y Ahorro",
-      "Transmisión: Super CVT-i de 7 Velocidades",
-      "Capacidad: 7 Pasajeros con Versatilidad de Asientos",
-      "Seguridad: 8 Airbags (Frontales, Laterales y Rodilla)",
-      "Confort: Control de Velocidad Crucero, Smart Key",
-      "Tecnología: Panel de Instrumentos Optitron High-Definition",
-      "Extras: Maletero Modular de Gran Capacidad",
-      "Conducción: Suspensión Confort Plus - Ideal para Rutas"
+      "Motor: 2.0 Turbo Diesel CRDi",
+      "Transmisión: Automática H-Matic",
+      "Interior: Cuero Premium Microperforado",
+      "Techo: Panorámico Solar de Apertura Total",
+      "Seguridad: Sensores 360° + Frenado Autónomo",
+      "Tecnología: Apple CarPlay & Android Auto Wireless"
     ],
     transmision: "Automático",
-    combustible: "Nafta",
-    asientos: 7,
-    tipo: 'Familiar',
-    consumo: "8.2L/100km",
-    mantenimientoVence: "01/01/2026",
-    seguroVence: "01/01/2027"
+    combustible: "Diesel",
+    asientos: 5,
+    tipo: 'SUV',
+    consumo: "7.8L/100km",
+    mantenimientoVence: "15/05/2026",
+    seguroVence: "12/12/2026"
   }
 ];
 

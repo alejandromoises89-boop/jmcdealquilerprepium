@@ -64,4 +64,5 @@ export interface Breakdown {
   fecha: string;
   prioridad: 'Alta' | 'Media' | 'Baja';
   resuelta: boolean;
+  evidencia?: string[]; // Array de strings base64 (fotos/videos)
 }

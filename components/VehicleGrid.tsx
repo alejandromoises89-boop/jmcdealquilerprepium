@@ -1,8 +1,9 @@
+
 import React, { useState, useMemo } from 'react';
 import { Vehicle, Reservation } from '../types';
 import VehicleCard from './VehicleCard';
 import BookingModal from './BookingModal';
-import { Search, Filter, ArrowUpDown, LayoutGrid, CheckCircle, Car, X, Calendar } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, LayoutGrid, CheckCircle, Car, X, Calendar, CreditCard } from 'lucide-react';
 
 interface VehicleGridProps {
   flota: Vehicle[];
@@ -14,6 +15,7 @@ interface VehicleGridProps {
 const VehicleGrid: React.FC<VehicleGridProps> = ({ flota, exchangeRate, reservations, onAddReservation }) => {
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [plateSearch, setPlateSearch] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'none'>('none');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterAvailability, setFilterAvailability] = useState<string>('all');
@@ -24,8 +26,13 @@ const VehicleGrid: React.FC<VehicleGridProps> = ({ flota, exchangeRate, reservat
 
     if (searchTerm) {
       result = result.filter(v => 
-        v.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        v.placa.toLowerCase().includes(searchTerm.toLowerCase())
+        v.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    if (plateSearch) {
+      result = result.filter(v => 
+        v.placa.toLowerCase().includes(plateSearch.toLowerCase())
       );
     }
 
@@ -42,12 +49,8 @@ const VehicleGrid: React.FC<VehicleGridProps> = ({ flota, exchangeRate, reservat
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
       
       result = result.filter(v => {
-        // Simple logic: if there's any reservation covering the entire month, it's not available
-        // Better: check if there is at least 1 day available this month.
         const resForThisVehicle = reservations.filter(r => r.auto === v.nombre && r.status !== 'Completed' && r.status !== 'Cancelled');
         
-        // Find if there's any gap in reservations this month
-        // For simplicity, we check if total booked days < days in month
         let bookedDaysCount = 0;
         resForThisVehicle.forEach(r => {
           const start = new Date(r.inicio);
@@ -71,24 +74,38 @@ const VehicleGrid: React.FC<VehicleGridProps> = ({ flota, exchangeRate, reservat
     }
 
     return result;
-  }, [flota, searchTerm, sortOrder, filterType, filterAvailability, onlyAvailableThisMonth, reservations]);
+  }, [flota, searchTerm, plateSearch, sortOrder, filterType, filterAvailability, onlyAvailableThisMonth, reservations]);
 
   return (
     <div className="space-y-16">
       <div className="sticky top-24 z-40 bg-white/90 backdrop-blur-2xl p-6 md:p-8 rounded-[3rem] border border-gray-100 shadow-2xl shadow-bordeaux-900/5 space-y-6 animate-slideUp">
-        <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
-          <div className="relative w-full md:max-w-xl group">
-            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-bordeaux-800 transition-colors" size={22} />
-            <input 
-              type="text" 
-              placeholder="Buscar por modelo o placa..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-16 pr-8 py-5 bg-gray-50 border-none rounded-[2rem] focus:ring-2 focus:ring-bordeaux-800 transition-all outline-none font-bold text-base shadow-inner"
-            />
+        <div className="flex flex-col xl:flex-row gap-6 items-center justify-between">
+          <div className="flex flex-col md:flex-row gap-4 w-full md:max-w-3xl">
+            <div className="relative flex-1 group">
+              <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-bordeaux-800 transition-colors" size={20} />
+              <input 
+                type="text" 
+                placeholder="Buscar modelo..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-16 pr-8 py-4 bg-gray-50 border-none rounded-[1.5rem] focus:ring-2 focus:ring-bordeaux-800 transition-all outline-none font-bold text-sm shadow-inner"
+              />
+            </div>
+            
+            {/* Nuevo Filtro por Placa */}
+            <div className="relative w-full md:w-64 group">
+              <CreditCard className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-bordeaux-800 transition-colors" size={20} />
+              <input 
+                type="text" 
+                placeholder="Placa..." 
+                value={plateSearch}
+                onChange={(e) => setPlateSearch(e.target.value)}
+                className="w-full pl-16 pr-8 py-4 bg-gray-50 border-none rounded-[1.5rem] focus:ring-2 focus:ring-bordeaux-800 transition-all outline-none font-bold text-sm shadow-inner uppercase"
+              />
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+          <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto justify-end">
             <div className="flex items-center gap-3 bg-gray-50 px-6 py-4 rounded-[1.5rem] shadow-inner border border-gray-100/50">
               <Filter size={18} className="text-gold" />
               <select 
@@ -109,7 +126,7 @@ const VehicleGrid: React.FC<VehicleGridProps> = ({ flota, exchangeRate, reservat
                 onlyAvailableThisMonth ? 'bg-bordeaux-800 text-white shadow-xl' : 'bg-white border border-gray-100 text-gray-400'
               }`}
             >
-              <Calendar size={18} /> Disponibles este mes
+              <Calendar size={18} /> Mes
             </button>
 
             <button 
@@ -120,7 +137,7 @@ const VehicleGrid: React.FC<VehicleGridProps> = ({ flota, exchangeRate, reservat
                 : 'bg-white border border-gray-100 text-gray-400'
               }`}
             >
-              <CheckCircle size={18} /> Disponibles ahora
+              <CheckCircle size={18} /> Disponibles
             </button>
           </div>
         </div>
@@ -143,14 +160,14 @@ const VehicleGrid: React.FC<VehicleGridProps> = ({ flota, exchangeRate, reservat
               <Car size={60} />
             </div>
             <div className="space-y-3">
-              <h3 className="text-3xl font-serif font-bold text-gray-400">Sin Unidades Disponibles</h3>
-              <p className="text-gray-300 font-medium">No hay vehículos que coincidan con los filtros seleccionados.</p>
+              <h3 className="text-3xl font-serif font-bold text-gray-400">Sin Resultados</h3>
+              <p className="text-gray-300 font-medium">No hay vehículos que coincidan con los filtros de búsqueda.</p>
             </div>
             <button 
-              onClick={() => {setSearchTerm(''); setFilterType('all'); setFilterAvailability('all'); setSortOrder('none'); setOnlyAvailableThisMonth(false);}} 
+              onClick={() => {setSearchTerm(''); setPlateSearch(''); setFilterType('all'); setFilterAvailability('all'); setSortOrder('none'); setOnlyAvailableThisMonth(false);}} 
               className="px-10 py-4 bg-bordeaux-800 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-bordeaux-950 transition-all"
             >
-              Restablecer Filtros
+              Limpiar Filtros
             </button>
           </div>
         )}

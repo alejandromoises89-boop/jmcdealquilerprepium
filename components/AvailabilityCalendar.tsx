@@ -12,12 +12,11 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
   const occupiedDates = useMemo(() => {
     const occupied = new Set<string>();
     const targetModel = vehicleName.toLowerCase()
-      .replace(/toyota|hyundai|2010|blanco|negro|gris|silver/g, '')
+      .replace(/toyota|hyundai|2010|blanco|negro|gris|silver|2009/g, '')
       .trim();
 
     reservations.forEach((r) => {
       const resAuto = (r.auto || "").toLowerCase();
-      // Improved model matching logic
       const isMatch = resAuto.includes(targetModel) || targetModel.includes(resAuto);
       
       if (isMatch && r.status !== 'Cancelled') {
@@ -43,6 +42,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
           
           let safety = 0;
           while (current <= last && safety < 365) {
+            // Solo marcar como reservado si es a partir de enero 2026 según el requerimiento
             if (current >= FILTER_DATE_START) {
               occupied.add(current.toISOString().split('T')[0]);
             }
@@ -55,8 +55,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
     return occupied;
   }, [vehicleName, reservations]);
 
-  const renderMonth = (monthIndex: number) => {
-    const year = 2026;
+  const renderMonth = (monthIndex: number, year: number) => {
     const date = new Date(year, monthIndex, 1);
     const monthName = new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(date);
     const firstDay = (date.getDay() + 6) % 7; 
@@ -67,8 +66,8 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
     for (let i = 1; i <= daysInMonth; i++) days.push(i);
 
     return (
-      <div className="flex-1 w-full space-y-4">
-        <h4 className="text-[11px] font-black text-bordeaux-950 uppercase tracking-[0.4em] text-center capitalize py-4 bg-gray-50 rounded-[1.5rem] border border-gray-100">
+      <div className="flex-1 min-w-[280px] w-full space-y-4">
+        <h4 className="text-[11px] font-black text-bordeaux-950 uppercase tracking-[0.3em] text-center capitalize py-3 bg-bordeaux-50/50 rounded-2xl border border-bordeaux-100/30">
           {monthName} {year}
         </h4>
         <div className="grid grid-cols-7 gap-1">
@@ -76,7 +75,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
             <div key={d} className="text-[9px] font-black text-gray-300 text-center py-2">{d}</div>
           ))}
           {days.map((day, idx) => {
-            if (day === null) return <div key={`empty-${idx}`} className="h-10 sm:h-12" />;
+            if (day === null) return <div key={`empty-${idx}`} className="h-9" />;
             const currentDay = new Date(year, monthIndex, day);
             const dStr = currentDay.toISOString().split('T')[0];
             const isOccupied = occupiedDates.has(dStr);
@@ -84,16 +83,14 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
             return (
               <div 
                 key={day} 
-                className={`relative h-10 sm:h-12 flex items-center justify-center text-xs font-bold rounded-xl transition-all ${
-                  isOccupied ? 'text-gray-300 bg-gray-50/10' : 'text-gray-700 bg-gray-50/20'
+                className={`relative h-9 flex items-center justify-center text-[10px] font-bold rounded-lg transition-all duration-300 ${
+                  isOccupied ? 'text-gray-300 bg-gray-50/50 cursor-not-allowed' : 'text-gray-700 bg-white border border-gray-50'
                 }`}
+                title={isOccupied ? "Reservado" : "Disponible"}
               >
                 {day}
                 {isOccupied && (
-                  <div className="absolute top-1.5 right-1.5">
-                    {/* Subtle Golden Dot Marking */}
-                    <div className="w-1.5 h-1.5 bg-gold rounded-full shadow-[0_0_8px_rgba(212,175,55,0.6)] animate-pulse" />
-                  </div>
+                  <div className="absolute inset-x-1.5 bottom-1.5 h-[3px] bg-red-600/60 rounded-full" />
                 )}
               </div>
             );
@@ -103,21 +100,25 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
     );
   };
 
+  const today = new Date();
+  const currentMonth = today.getMonth();
+  const currentYear = today.getFullYear();
+
   return (
-    <div className="bg-white rounded-[2.5rem] p-6 lg:p-10 border border-bordeaux-50 shadow-xl space-y-8 animate-fadeIn w-full overflow-hidden">
-      <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
-        {/* Only current month (Jan) and Feb 2026 as requested */}
-        {renderMonth(0)}
-        {renderMonth(1)}
+    <div className="bg-white/50 backdrop-blur-sm rounded-[2.5rem] p-4 md:p-8 border border-bordeaux-50 shadow-inner space-y-8 animate-fadeIn w-full">
+      <div className="flex flex-col md:flex-row gap-8 justify-center items-start">
+        {renderMonth(currentMonth, currentYear)} 
+        {renderMonth(1, 2026)} {/* Febrero 2026 */}
       </div>
-      <div className="flex flex-wrap items-center justify-center gap-6 lg:gap-10 pt-6 border-t border-gray-100">
-        <div className="flex items-center gap-3">
-          <div className="w-2.5 h-2.5 bg-gold rounded-full shadow-[0_0_8px_rgba(212,175,55,0.5)]" />
-          <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Unidad Reservada</span>
+      
+      <div className="flex flex-wrap justify-center gap-6 pt-6 border-t border-gray-100">
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-[3px] bg-red-600/60 rounded-full" />
+          <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Reservado (2026+)</span>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="w-4 h-4 rounded-lg bg-gray-50 border border-gray-100" />
-          <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Disponible</span>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 rounded-md bg-white border border-gray-100" />
+          <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Disponible</span>
         </div>
       </div>
     </div>

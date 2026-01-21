@@ -51,10 +51,12 @@ const parseCSV = (text: string): string[][] => {
 
 export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null> => {
   try {
-    console.log("[JM-SYSTEM] Iniciando extracción desde Google Sheets (Pestaña Reservas)...");
+    console.log("%c[JM-SYSTEM] Iniciando extracción desde Google Sheets...", "color: #800000; font-weight: bold;");
+    
     const response = await fetch(`${GOOGLE_SHEET_RESERVATIONS_URL}&t=${Date.now()}`);
     
     if (!response.ok) {
+      console.error(`%c[JM-SYSTEM] Error de conexión: HTTP ${response.status}`, "color: #ff0000;");
       throw new Error(`HTTP Error: ${response.status}`);
     }
 
@@ -62,7 +64,7 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
     const rows = parseCSV(csvText);
     
     if (rows.length < 2) {
-      console.warn("[JM-SYSTEM] No se encontraron datos en la planilla.");
+      console.warn("%c[JM-SYSTEM] Conexión establecida pero la planilla está vacía.", "color: #D4AF37;");
       return null;
     }
 
@@ -83,7 +85,6 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
       
       if (!startStr) return null;
 
-      // Intentar limpiar nombres de autos (Ej: "Tucson" de "Hyundai Tucson Blanco")
       let rawAuto = getVal(['auto', 'vehiculo', 'unidad']).toLowerCase();
 
       return {
@@ -99,10 +100,10 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
       };
     }).filter((r): r is Reservation => r !== null);
 
-    console.log(`[JM-SYSTEM] Sincronización exitosa: ${parsed.length} registros cargados.`);
+    console.log(`%c[JM-SYSTEM] Sincronización exitosa: ${parsed.length} registros cargados de Google Sheets.`, "color: #008000; font-weight: bold;");
     return parsed;
   } catch (error) {
-    console.error("[JM-SYSTEM] Error crítico en sincronización:", error);
+    console.error("%c[JM-SYSTEM] Error crítico en la conexión con Google Sheets:", "color: #ff0000; font-weight: bold;", error);
     return null;
   }
 };
