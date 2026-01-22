@@ -31,64 +31,34 @@
                         sans: ['Inter', 'sans-serif'],
                         serif: ['Playfair Display', 'serif'],
                     },
-                    animation: {
-                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                        'float': 'float 6s ease-in-out infinite',
-                    },
-                    keyframes: {
-                        float: {
-                            '0%, 100%': { transform: 'translateY(0)' },
-                            '50%': { transform: 'translateY(-10px)' },
-                        }
-                    }
                 }
             }
         }
     </script>
     <style>
-        body {
-            background-color: #ffffff;
-            color: #1a1a1a;
-            scroll-behavior: smooth;
-        }
-        .glass-morphism {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(128, 0, 0, 0.05);
-        }
-        .airbnb-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        .airbnb-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-        .bordeaux-gradient {
-            background: linear-gradient(135deg, #800000 0%, #3a0b0b 100%);
-        }
-        .gold-shine {
-            background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.2), transparent);
-            background-size: 200% 100%;
-            animation: shine 3s infinite linear;
-        }
-        @keyframes shine {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-        }
+        body { background-color: #ffffff; color: #1a1a1a; scroll-behavior: smooth; overflow-x: hidden; }
+        .glass-morphism { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); border: 1px solid rgba(128, 0, 0, 0.05); }
+        .bordeaux-gradient { background: linear-gradient(135deg, #800000 0%, #3a0b0b 100%); }
+        /* Animaciones para mejorar UX */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-fadeIn { animation: fadeIn 0.5s ease-out; }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "recharts": "https://esm.sh/recharts@^3.6.0",
-    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "recharts": "https://esm.sh/recharts@^3.7.0",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
 </head>
 <body>
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>

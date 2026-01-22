@@ -10,7 +10,7 @@ import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import LocationSection from './components/LocationSection';
 import SupportForm from './components/SupportForm';
-import { RefreshCw, CheckCircle, ShieldCheck, Gem, Lock, BellRing, X, Landmark, AlertTriangle } from 'lucide-react';
+import { RefreshCw, BellRing, X, Landmark, Lock } from 'lucide-react';
 
 interface AppNotification {
   id: string;
@@ -29,7 +29,6 @@ const App: React.FC = () => {
   const [breakdowns, setBreakdowns] = useState<Breakdown[]>([]);
   const [exchangeRate, setExchangeRate] = useState<number>(1450);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSyncSuccess, setLastSyncSuccess] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>("");
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
@@ -56,92 +55,12 @@ const App: React.FC = () => {
     });
   }, []);
 
-  const checkFleetStatus = useCallback((currentFlota: Vehicle[]) => {
-    const today = new Date();
-    const fifteenDaysLater = new Date();
-    fifteenDaysLater.setDate(today.getDate() + 15);
-
-    currentFlota.forEach(v => {
-      const mntDate = parseDate(v.mantenimientoVence || "");
-      const segDate = parseDate(v.seguroVence || "");
-
-      if (mntDate) {
-        if (mntDate < today) {
-          pushNotification({
-            id: `mnt-expired-${v.id}`,
-            type: 'critical',
-            title: `MANTENIMIENTO VENCIDO: ${v.placa}`,
-            message: `La unidad ${v.nombre} requiere atención inmediata.`,
-            actionUrl: `https://wa.me/595993471667?text=ALERTA:%20Mantenimiento%20VENCIDO%20Unidad%20${v.placa}`
-          });
-        } else if (mntDate < fifteenDaysLater) {
-          pushNotification({
-            id: `mnt-warn-${v.id}`,
-            type: 'maintenance',
-            title: `Mantenimiento Próximo: ${v.placa}`,
-            message: `Vence el ${v.mantenimientoVence}. Agendar revisión.`,
-          });
-        }
-      }
-
-      if (segDate) {
-        if (segDate < today) {
-          pushNotification({
-            id: `seg-expired-${v.id}`,
-            type: 'critical',
-            title: `SEGURO VENCIDO: ${v.placa}`,
-            message: `Unidad ${v.nombre} sin cobertura activa. Bloquear unidad.`,
-            actionUrl: `https://wa.me/595991681191?text=URGENTE:%20Seguro%20VENCIDO%20Unidad%20${v.placa}`
-          });
-        } else if (segDate < fifteenDaysLater) {
-          pushNotification({
-            id: `seg-warn-${v.id}`,
-            type: 'maintenance',
-            title: `Seguro por Vencer: ${v.placa}`,
-            message: `Renovación necesaria para el ${v.seguroVence}.`,
-          });
-        }
-      }
-    });
-  }, [pushNotification]);
-
-  useEffect(() => {
-    fetchBrlToPyg().then(setExchangeRate);
-    
-    const savedUser = localStorage.getItem('jm_session_user');
-    const savedAdminLock = localStorage.getItem('jm_admin_unlocked');
-    const savedRes = localStorage.getItem('jm_reservations');
-    const savedGastos = localStorage.getItem('jm_gastos');
-    const savedBreakdowns = localStorage.getItem('jm_breakdowns');
-    const savedFlota = localStorage.getItem('jm_flota');
-
-    if (savedUser) setUser(JSON.parse(savedUser));
-    if (savedAdminLock === 'true') setIsAdminUnlocked(true);
-    if (savedRes) setReservations(JSON.parse(savedRes));
-    if (savedGastos) setGastos(JSON.parse(savedGastos));
-    if (savedBreakdowns) setBreakdowns(JSON.parse(savedBreakdowns));
-    
-    if (savedFlota) {
-      const parsedFlota = JSON.parse(savedFlota);
-      setFlota(parsedFlota);
-      checkFleetStatus(parsedFlota);
-    } else {
-      checkFleetStatus(INITIAL_FLOTA);
-    }
-
-    syncDataFromSheet();
-  }, [checkFleetStatus]);
-
   const syncDataFromSheet = async () => {
+    if (isSyncing) return;
     setIsSyncing(true);
     try {
       const sheetReservations = await fetchReservationsFromSheet();
-      
       if (sheetReservations) {
-        if (sheetReservations.length === 0) {
-          alert("Sincronización Completa: No se encontraron registros nuevos en la nube.");
-        }
-
         const filteredSheetData = sheetReservations.filter(res => {
           const resDate = parseDate(res.inicio);
           return resDate && resDate >= FILTER_DATE_START;
@@ -153,10 +72,7 @@ const App: React.FC = () => {
           localStorage.setItem('jm_reservations', JSON.stringify(unique));
           return unique;
         });
-        
         setLastSyncTime(new Date().toLocaleTimeString());
-        setLastSyncSuccess(true);
-        setTimeout(() => setLastSyncSuccess(false), 3000);
       }
     } catch (err) {
       console.error("Sync error", err);
@@ -165,11 +81,25 @@ const App: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    fetchBrlToPyg().then(setExchangeRate);
+    
+    const savedUser = localStorage.getItem('jm_session_user');
+    const savedAdminLock = localStorage.getItem('jm_admin_unlocked');
+    const savedRes = localStorage.getItem('jm_reservations');
+    const savedFlota = localStorage.getItem('jm_flota');
+
+    if (savedUser) setUser(JSON.parse(savedUser));
+    if (savedAdminLock === 'true') setIsAdminUnlocked(true);
+    if (savedRes) setReservations(JSON.parse(savedRes));
+    if (savedFlota) setFlota(JSON.parse(savedFlota));
+
+    syncDataFromSheet();
+  }, []);
+
   const handleLogin = (userData: User) => {
     setUser(userData);
     localStorage.setItem('jm_session_user', JSON.stringify(userData));
-    pushNotification({ id: 'welcome', type: 'system', title: 'Acceso VIP JM', message: `Bienvenido Director ${userData.name}.` });
-    checkFleetStatus(flota);
   };
 
   const handleLogout = () => {
@@ -186,12 +116,6 @@ const App: React.FC = () => {
       setPinValue("");
       localStorage.setItem('jm_admin_unlocked', 'true');
       setActiveTab('admin');
-      pushNotification({ 
-        id: 'admin-unlocked', 
-        type: 'system', 
-        title: 'Acceso Maestro', 
-        message: 'Panel de gestión desbloqueado con éxito.' 
-      });
     } else {
       alert("PIN Incorrecto");
       setPinValue("");
@@ -203,7 +127,6 @@ const App: React.FC = () => {
     setReservations(updated);
     localStorage.setItem('jm_reservations', JSON.stringify(updated));
     await saveReservationToSheet(res);
-    pushNotification({ id: `new-res-${res.id}`, type: 'booking', title: 'Nueva Reserva', message: `Cliente ${res.cliente} agendado con éxito.` });
   };
 
   if (!user) return <Login onLogin={handleLogin} isLoading={false} />;
@@ -223,33 +146,23 @@ const App: React.FC = () => {
 
       <div className="fixed top-28 right-6 z-[120] flex flex-col gap-4 max-w-sm w-full">
         {appNotifications.map(n => (
-          <div key={n.id} className="bg-white/95 backdrop-blur-md shadow-2xl border border-bordeaux-100 rounded-[2rem] p-6 animate-slideDown flex flex-col gap-4 overflow-hidden relative">
+          <div key={n.id} className="bg-white/95 backdrop-blur-md shadow-2xl border border-bordeaux-100 rounded-[2rem] p-6 flex flex-col gap-4 relative">
             <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${n.type === 'critical' ? 'bg-red-600' : 'bg-gold'}`}></div>
             <div className="flex gap-4">
-              <div className="w-10 h-10 bg-bordeaux-50 rounded-xl flex items-center justify-center shrink-0 text-bordeaux-800">
-                <BellRing size={18} />
-              </div>
+              <div className="w-10 h-10 bg-bordeaux-50 rounded-xl flex items-center justify-center shrink-0 text-bordeaux-800"><BellRing size={18} /></div>
               <div className="flex-1">
                 <h4 className="text-xs font-black text-bordeaux-950 uppercase tracking-tight">{n.title}</h4>
                 <p className="text-[10px] text-gray-500 font-medium">{n.message}</p>
               </div>
               <button onClick={() => setAppNotifications(prev => prev.filter(x => x.id !== n.id))} className="text-gray-300 hover:text-red-500"><X size={14} /></button>
             </div>
-            {n.actionUrl && (
-              <button 
-                onClick={() => window.open(n.actionUrl, '_blank')}
-                className="w-full py-2 bg-bordeaux-800 text-white rounded-xl text-[9px] font-black uppercase hover:bg-bordeaux-950 transition-all"
-              >
-                Abrir Reporte WhatsApp
-              </button>
-            )}
           </div>
         ))}
         
         {isSyncing && (
-          <div className="bg-bordeaux-950 text-white p-4 rounded-2xl flex items-center gap-4 shadow-2xl animate-pulse">
+          <div className="bg-bordeaux-950 text-white p-4 rounded-2xl flex items-center gap-4 shadow-2xl">
             <RefreshCw className="animate-spin text-gold" size={16} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Sincronizando Logística...</span>
+            <span className="text-[10px] font-black uppercase tracking-widest">Sincronizando con la Nube...</span>
           </div>
         )}
       </div>
@@ -265,23 +178,15 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-6 pt-32 pb-40 relative z-10">
-        {activeTab === 'reservas' && (
-          <VehicleGrid flota={flota} exchangeRate={exchangeRate} reservations={reservations} onAddReservation={handleAddReservation} />
-        )}
+      <main className="max-w-7xl mx-auto px-6 pt-32 pb-40">
+        {activeTab === 'reservas' && <VehicleGrid flota={flota} exchangeRate={exchangeRate} reservations={reservations} onAddReservation={handleAddReservation} />}
         {activeTab === 'ubicacion' && <LocationSection />}
-        {activeTab === 'asistencia' && <SupportForm flota={flota} onSubmit={(b) => {
-          const n = [...breakdowns, b];
-          setBreakdowns(n);
-          localStorage.setItem('jm_breakdowns', JSON.stringify(n));
-          alert("Reporte enviado al centro de control");
-        }} />}
+        {activeTab === 'asistencia' && <SupportForm flota={flota} onSubmit={(b) => alert("Reporte enviado")} />}
         {activeTab === 'admin' && isAdminUnlocked && (
           <AdminPanel 
             flota={flota} setFlota={(f) => { setFlota(f); localStorage.setItem('jm_flota', JSON.stringify(f)); }}
             reservations={reservations} setReservations={(r) => { setReservations(r); localStorage.setItem('jm_reservations', JSON.stringify(r)); }}
-            gastos={gastos} setGastos={(g) => { setGastos(g); localStorage.setItem('jm_gastos', JSON.stringify(g)); }}
-            exchangeRate={exchangeRate} onSyncSheet={syncDataFromSheet} isSyncing={isSyncing} breakdowns={breakdowns}
+            gastos={gastos} setGastos={setGastos} exchangeRate={exchangeRate} onSyncSheet={syncDataFromSheet} isSyncing={isSyncing} breakdowns={breakdowns}
           />
         )}
       </main>

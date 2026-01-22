@@ -51,20 +51,26 @@ const parseCSV = (text: string): string[][] => {
 
 export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null> => {
   try {
-    console.log("[JM-SYSTEM] Solicitando datos a la nube...");
+    console.log("[JM-CLOUD] Conectando con Google Sheets...");
     
-    // El timestamp t= evita que el navegador use datos viejos guardados
-    const response = await fetch(`${GOOGLE_SHEET_RESERVATIONS_URL}&t=${Date.now()}`);
+    // El cache_bust es vital para que no lea datos viejos
+    const response = await fetch(`${GOOGLE_SHEET_RESERVATIONS_URL}&cache_bust=${Date.now()}`);
     
     if (!response.ok) {
-      throw new Error(`Error de conexión con Google (Status: ${response.status})`);
+      throw new Error(`Google Sheets no respondió (Código: ${response.status})`);
     }
 
     const csvText = await response.text();
+    
+    // Verificación de acceso público
+    if (csvText.includes('<!DOCTYPE html>') || csvText.includes('login')) {
+      throw new Error("ACCESO DENEGADO: La planilla debe estar en 'Cualquier persona con el enlace puede leer'.");
+    }
+
     const rows = parseCSV(csvText);
     
     if (rows.length < 2) {
-      console.warn("[JM-SYSTEM] La planilla parece estar vacía.");
+      alert("⚠️ Sincronización exitosa, pero la planilla parece no tener datos de reservas.");
       return [];
     }
 
@@ -81,20 +87,20 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
       };
 
       const startStr = getVal(['salida', 'entrega', 'inicio', 'desde', 'fecha_inicio', 'fecha_salida', 'fecha']);
-      const endStr = getVal(['retorno', 'devolución', 'devuelta', 'regreso', 'fin', 'hasta', 'fecha_fin', 'fecha_retorno']);
+      const endStr = getVal(['retorno', 'devolución', 'regreso', 'fin', 'hasta', 'fecha_fin', 'fecha_retorno']);
       
       if (!startStr) return null;
 
-      // Normalización de monto: quita letras y símbolos para dejar solo el número
-      const rawMonto = getVal(['total', 'monto', 'brl', 'precio', 'valor']);
-      const cleanMonto = parseFloat(rawMonto.replace(/[^0-9.]/g, '')) || 0;
+      const rawMonto = getVal(['total', 'monto', 'brl', 'precio', 'valor', 'monto_total']);
+      // Limpieza de caracteres no numéricos (como R$ o puntos de miles)
+      const cleanMonto = parseFloat(rawMonto.replace(/[^0-9]/g, '')) || 0;
 
       return {
-        id: getVal(['id', 'reserva_id', 'nro', 'número']) || `CLOUD-${Date.now()}-${index}`,
+        id: getVal(['id', 'reserva_id', 'nro']) || `CLOUD-${Date.now()}-${index}`,
         cliente: getVal(['cliente', 'nombre', 'arrendatario']) || 'Sin Nombre',
-        ci: getVal(['ci', 'documento', 'rg', 'cpf']) || 'N/A',
-        celular: getVal(['celular', 'whatsapp', 'tel', 'contacto']) || 'N/A',
-        auto: getVal(['auto', 'vehículo', 'unidad', 'carro']).toLowerCase(),
+        ci: getVal(['ci', 'documento', 'rg']) || 'N/A',
+        celular: getVal(['celular', 'whatsapp', 'contacto']) || 'N/A',
+        auto: getVal(['auto', 'vehículo', 'unidad']).toLowerCase(),
         inicio: startStr,
         fin: endStr || startStr,
         total: cleanMonto,
@@ -104,10 +110,11 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
       };
     }).filter((r): r is Reservation => r !== null);
 
+    console.log(`[JM-CLOUD] Sincronización exitosa: ${parsed.length} reservas.`);
     return parsed;
   } catch (error: any) {
-    console.error("[JM-SYSTEM] Fallo al leer de la nube:", error);
-    alert("⚠️ Error de Sincronización: Asegúrate de que la planilla sea PÚBLICA (Cualquiera con el enlace puede leer) y que la pestaña se llame 'Reservas'.");
+    console.error("[JM-CLOUD] Error crítico:", error.message);
+    alert(`❌ ERROR DE NUBE: ${error.message}`);
     return null;
   }
 };
@@ -115,7 +122,7 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
 export const saveReservationToSheet = async (res: Reservation): Promise<boolean> => {
   try {
     if (!GOOGLE_SHEET_WEBAPP_URL || GOOGLE_SHEET_WEBAPP_URL.includes('XXXXX')) {
-      console.warn("[JM-SYSTEM] Script URL no configurado. El guardado no se enviará a la nube.");
+      console.warn("URL de Script no configurada.");
       return false;
     }
 
@@ -127,7 +134,6 @@ export const saveReservationToSheet = async (res: Reservation): Promise<boolean>
     });
     return true;
   } catch (error) {
-    console.error("[JM-SYSTEM] Error al guardar en nube:", error);
     return false;
   }
 };
