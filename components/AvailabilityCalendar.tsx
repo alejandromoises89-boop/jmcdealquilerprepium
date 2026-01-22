@@ -14,35 +14,31 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
   const occupiedDates = useMemo(() => {
     const occupied = new Set<string>();
     
-    // Término clave para matching (ej: "vitz", "tucson")
     const keyTerm = vehicleName.toLowerCase().split(' ').find(word => 
       !['toyota', 'hyundai', 'blanco', 'negro', 'gris'].includes(word)
     ) || vehicleName.toLowerCase();
 
     reservations.forEach((r) => {
       const resAuto = (r.auto || "").toLowerCase();
-      // Verificamos si la reserva pertenece a este vehículo (flexibilidad de términos)
       const isMatch = resAuto.includes(keyTerm) || keyTerm.includes(resAuto);
       const shouldInclude = r.includeInCalendar !== false && r.status !== 'Cancelled';
       
       if (isMatch && shouldInclude) {
         const parseD = (s: string) => {
           if (!s) return null;
-          // Limpiar la cadena de hora si existe
           const datePart = s.split(' ')[0];
           const parts = datePart.split(/[/-]/);
           if (parts.length !== 3) return null;
           
           let d, m, y;
-          if (parts[0].length === 4) { // Formato YYYY-MM-DD
+          if (parts[0].length === 4) {
             y = parseInt(parts[0]);
             m = parseInt(parts[1]) - 1;
             d = parseInt(parts[2]);
-          } else { // Formato DD/MM/YYYY o DD-MM-YYYY
+          } else {
             d = parseInt(parts[0]);
             m = parseInt(parts[1]) - 1;
             y = parseInt(parts[2]);
-            // Ajuste para años de 2 dígitos si existieran
             if (y < 100) y += 2000;
           }
           return new Date(y, m, d);
@@ -59,7 +55,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
           
           const tempDate = new Date(curr);
           let iterations = 0;
-          while (tempDate <= last && iterations < 90) { // Ampliado a 90 días para contratos largos
+          while (tempDate <= last && iterations < 90) {
             occupied.add(tempDate.toISOString().split('T')[0]);
             tempDate.setDate(tempDate.getDate() + 1);
             iterations++;
@@ -96,16 +92,16 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
           <div key={d} className="text-[9px] font-black text-gray-300 text-center py-2">{d}</div>
         ))}
         {days.map((day, idx) => {
-          if (!day) return <div key={`empty-${idx}`} className="h-10" />;
+          if (!day) return <div key={`empty-${idx}`} className="h-14" />;
           const dateObj = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
           const dStr = dateObj.toISOString().split('T')[0];
           const isOccupied = occupiedDates.has(dStr);
 
           return (
-            <div key={day} className={`relative h-12 flex flex-col items-center justify-center text-[10px] font-bold rounded-xl transition-all ${isOccupied ? 'bg-red-50 text-red-700 font-black' : 'bg-white text-gray-700 hover:bg-bordeaux-50'}`}>
-              <span className="relative z-10">{day}</span>
+            <div key={day} className={`relative h-14 flex flex-col items-center justify-center text-[10px] font-bold rounded-xl transition-all ${isOccupied ? 'bg-red-50 text-red-700 font-black border border-red-100' : 'bg-white text-gray-700 hover:bg-bordeaux-50 border border-transparent'}`}>
+              <span className="relative z-10 leading-none">{day}</span>
               {isOccupied && (
-                <div className="w-4/5 h-1.5 bg-red-600 rounded-full mt-0.5 shadow-[0_2px_4px_rgba(220,38,38,0.3)]" />
+                <span className="text-[7px] font-black uppercase tracking-tighter mt-1 opacity-80">Alquilado</span>
               )}
             </div>
           );
@@ -113,12 +109,12 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
       </div>
       <div className="flex flex-col gap-2 pt-2 border-t border-gray-50">
          <div className="flex items-center gap-2">
-            <div className="w-5 h-1.5 rounded-full bg-red-600"></div>
-            <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Ocupado / Raya Roja Horizontal</span>
+            <div className="w-5 h-2 rounded-full bg-red-600"></div>
+            <span className="text-[8px] font-black text-gray-600 uppercase tracking-widest">Alquilado</span>
          </div>
          <div className="flex items-center gap-2">
-            <div className="w-5 h-1.5 rounded-full bg-gray-100"></div>
-            <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Disponibilidad VIP</span>
+            <div className="w-5 h-2 rounded-full bg-gray-200"></div>
+            <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Disponible</span>
          </div>
       </div>
     </div>

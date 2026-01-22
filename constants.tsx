@@ -125,9 +125,9 @@ export const INITIAL_FLOTA: Vehicle[] = [
 ];
 
 export const GOOGLE_SHEET_ID = "1cGvNGAtCh84Gvs3-x7n0I2W-rqbG3W2z";
-// URL de despliegue de Apps Script para recibir POST requests
 export const GOOGLE_SHEET_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbz_XXXXXXXXX/exec"; 
 export const GOOGLE_SHEET_RESERVATIONS_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Reservas`;
 export const GOOGLE_SHEET_EMBED_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit?usp=sharing`;
 
-export const FILTER_DATE_START = new Date('2026-01-01');
+// Cambiado a 2025 para permitir sincronización de datos actuales
+export const FILTER_DATE_START = new Date('2025-01-01');

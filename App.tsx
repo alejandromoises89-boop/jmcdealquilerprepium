@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { User, Vehicle, Reservation, Gasto, Breakdown } from './types';
-import { INITIAL_FLOTA } from './constants';
+import { INITIAL_FLOTA, FILTER_DATE_START } from './constants';
 import { fetchBrlToPyg } from './services/exchangeService';
 import { fetchReservationsFromSheet, saveReservationToSheet } from './services/googleSheetService';
 import Navbar from './components/Navbar';
@@ -39,9 +39,14 @@ const App: React.FC = () => {
 
   const parseDate = (dateStr: string) => {
     if (!dateStr) return null;
-    const parts = dateStr.split('/');
+    const parts = dateStr.split(' ')[0].split(/[/-]/);
     if (parts.length !== 3) return null;
-    return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+    
+    let d, m, y;
+    if (parts[0].length === 4) { y = parseInt(parts[0]); m = parseInt(parts[1]) - 1; d = parseInt(parts[2]); }
+    else { d = parseInt(parts[0]); m = parseInt(parts[1]) - 1; y = parseInt(parts[2]); }
+    if (y < 100) y += 2000;
+    return new Date(y, m, d);
   };
 
   const pushNotification = useCallback((notif: AppNotification) => {
@@ -127,6 +132,39 @@ const App: React.FC = () => {
     syncDataFromSheet();
   }, [checkFleetStatus]);
 
+  const syncDataFromSheet = async () => {
+    setIsSyncing(true);
+    try {
+      const sheetReservations = await fetchReservationsFromSheet();
+      
+      if (sheetReservations) {
+        if (sheetReservations.length === 0) {
+          alert("Sincronización Completa: No se encontraron registros nuevos en la nube.");
+        }
+
+        const filteredSheetData = sheetReservations.filter(res => {
+          const resDate = parseDate(res.inicio);
+          return resDate && resDate >= FILTER_DATE_START;
+        });
+
+        setReservations(prev => {
+          const merged = [...filteredSheetData, ...prev];
+          const unique = Array.from(new Map(merged.map(item => [item.id, item])).values());
+          localStorage.setItem('jm_reservations', JSON.stringify(unique));
+          return unique;
+        });
+        
+        setLastSyncTime(new Date().toLocaleTimeString());
+        setLastSyncSuccess(true);
+        setTimeout(() => setLastSyncSuccess(false), 3000);
+      }
+    } catch (err) {
+      console.error("Sync error", err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleLogin = (userData: User) => {
     setUser(userData);
     localStorage.setItem('jm_session_user', JSON.stringify(userData));
@@ -141,37 +179,21 @@ const App: React.FC = () => {
     localStorage.removeItem('jm_admin_unlocked');
   };
 
-  const syncDataFromSheet = async () => {
-    setIsSyncing(true);
-    try {
-      const sheetReservations = await fetchReservationsFromSheet();
-      if (sheetReservations) {
-        setReservations(prev => {
-          const merged = [...sheetReservations, ...prev];
-          const unique = Array.from(new Map(merged.map(item => [item.id, item])).values());
-          localStorage.setItem('jm_reservations', JSON.stringify(unique));
-          return unique;
-        });
-      }
-      setLastSyncSuccess(true);
-      setLastSyncTime(new Date().toLocaleTimeString());
-      setTimeout(() => setLastSyncSuccess(false), 3000);
-    } catch (err) {
-      console.error("Sync error", err);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const handlePinSubmit = () => {
-    if (pinValue === "8899") {
+    if (pinValue === "2026") {
       setIsAdminUnlocked(true);
-      localStorage.setItem('jm_admin_unlocked', 'true');
       setShowPinPrompt(false);
-      setActiveTab('admin');
       setPinValue("");
+      localStorage.setItem('jm_admin_unlocked', 'true');
+      setActiveTab('admin');
+      pushNotification({ 
+        id: 'admin-unlocked', 
+        type: 'system', 
+        title: 'Acceso Maestro', 
+        message: 'Panel de gestión desbloqueado con éxito.' 
+      });
     } else {
-      alert("PIN incorrecto");
+      alert("PIN Incorrecto");
       setPinValue("");
     }
   };
@@ -180,15 +202,8 @@ const App: React.FC = () => {
     const updated = [res, ...reservations];
     setReservations(updated);
     localStorage.setItem('jm_reservations', JSON.stringify(updated));
-    
-    // Intento de guardado en la nube inmediato para nuevas reservas
     await saveReservationToSheet(res);
-    pushNotification({
-      id: `new-res-${res.id}`,
-      type: 'booking',
-      title: 'Reserva Enviada',
-      message: `Solicitud de ${res.cliente} registrada en la nube.`
-    });
+    pushNotification({ id: `new-res-${res.id}`, type: 'booking', title: 'Nueva Reserva', message: `Cliente ${res.cliente} agendado con éxito.` });
   };
 
   if (!user) return <Login onLogin={handleLogin} isLoading={false} />;
@@ -206,14 +221,13 @@ const App: React.FC = () => {
         onLogout={handleLogout} 
       />
 
-      {/* Enhanced Toasts */}
       <div className="fixed top-28 right-6 z-[120] flex flex-col gap-4 max-w-sm w-full">
         {appNotifications.map(n => (
-          <div key={n.id} className={`bg-white/95 backdrop-blur-md shadow-2xl border rounded-[2rem] p-6 animate-slideDown flex flex-col gap-4 overflow-hidden relative ${n.type === 'critical' ? 'border-red-200' : 'border-bordeaux-100'}`}>
-            <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${n.type === 'critical' ? 'bg-red-600' : n.type === 'maintenance' ? 'bg-orange-500' : 'bg-gold'}`}></div>
+          <div key={n.id} className="bg-white/95 backdrop-blur-md shadow-2xl border border-bordeaux-100 rounded-[2rem] p-6 animate-slideDown flex flex-col gap-4 overflow-hidden relative">
+            <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${n.type === 'critical' ? 'bg-red-600' : 'bg-gold'}`}></div>
             <div className="flex gap-4">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${n.type === 'critical' ? 'bg-red-50 text-red-600' : 'bg-bordeaux-50 text-bordeaux-800'}`}>
-                {n.type === 'critical' ? <AlertTriangle size={18} /> : <BellRing size={18} />}
+              <div className="w-10 h-10 bg-bordeaux-50 rounded-xl flex items-center justify-center shrink-0 text-bordeaux-800">
+                <BellRing size={18} />
               </div>
               <div className="flex-1">
                 <h4 className="text-xs font-black text-bordeaux-950 uppercase tracking-tight">{n.title}</h4>
@@ -224,27 +238,34 @@ const App: React.FC = () => {
             {n.actionUrl && (
               <button 
                 onClick={() => window.open(n.actionUrl, '_blank')}
-                className="w-full py-2 bg-bordeaux-800 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-bordeaux-950 transition-all flex items-center justify-center gap-2"
+                className="w-full py-2 bg-bordeaux-800 text-white rounded-xl text-[9px] font-black uppercase hover:bg-bordeaux-950 transition-all"
               >
-                Ejecutar Reporte WhatsApp
+                Abrir Reporte WhatsApp
               </button>
             )}
           </div>
         ))}
+        
+        {isSyncing && (
+          <div className="bg-bordeaux-950 text-white p-4 rounded-2xl flex items-center gap-4 shadow-2xl animate-pulse">
+            <RefreshCw className="animate-spin text-gold" size={16} />
+            <span className="text-[10px] font-black uppercase tracking-widest">Sincronizando Logística...</span>
+          </div>
+        )}
       </div>
 
       {showPinPrompt && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center bg-bordeaux-950/90 backdrop-blur-sm">
           <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm text-center space-y-8 animate-slideUp">
             <div className="w-16 h-16 bg-bordeaux-50 rounded-full flex items-center justify-center mx-auto text-bordeaux-800"><Lock size={32} /></div>
-            <h3 className="text-2xl font-serif font-bold text-bordeaux-950">Acceso Privado</h3>
+            <h3 className="text-2xl font-serif font-bold text-bordeaux-950">Acceso Maestro</h3>
             <input type="password" maxLength={4} value={pinValue} onChange={(e) => setPinValue(e.target.value)} placeholder="****" className="w-full bg-gray-50 border-0 rounded-2xl py-5 text-center text-3xl font-black tracking-[1em] outline-none focus:ring-2 focus:ring-bordeaux-800" autoFocus />
-            <button onClick={handlePinSubmit} className="w-full bg-bordeaux-800 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest">Confirmar</button>
+            <button onClick={handlePinSubmit} className="w-full bg-bordeaux-800 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest">Confirmar PIN</button>
           </div>
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-6 py-12 relative z-10 pb-40">
+      <main className="max-w-7xl mx-auto px-6 pt-32 pb-40 relative z-10">
         {activeTab === 'reservas' && (
           <VehicleGrid flota={flota} exchangeRate={exchangeRate} reservations={reservations} onAddReservation={handleAddReservation} />
         )}
@@ -253,7 +274,7 @@ const App: React.FC = () => {
           const n = [...breakdowns, b];
           setBreakdowns(n);
           localStorage.setItem('jm_breakdowns', JSON.stringify(n));
-          alert("Reporte enviado");
+          alert("Reporte enviado al centro de control");
         }} />}
         {activeTab === 'admin' && isAdminUnlocked && (
           <AdminPanel 
@@ -269,6 +290,7 @@ const App: React.FC = () => {
         <div className="flex items-center gap-4">
           <Landmark size={20} className="text-gold" />
           <span className="text-sm font-bold">1 R$ = <span className="text-gold">{exchangeRate.toLocaleString()} Gs.</span></span>
+          {lastSyncTime && <span className="text-[10px] opacity-40 ml-4">Sinc: {lastSyncTime}</span>}
         </div>
         <p className="text-[10px] font-black uppercase tracking-widest opacity-30">JM ASOCIADOS CORPORATE &copy; 2026</p>
       </div>
