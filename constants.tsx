@@ -125,7 +125,7 @@ export const INITIAL_FLOTA: Vehicle[] = [
 ];
 
 export const GOOGLE_SHEET_ID = "1cGvNGAtCh84Gvs3-x7n0I2W-rqbG3W2z";
-export const GOOGLE_SHEET_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbz_XXXXXXXXX/exec"; 
+export const GOOGLE_SHEET_WEBAPP_URL = "https://docs.google.com/spreadsheets/d/1cGvNGAtCh84Gvs3-x7n0I2W-rqbG3W2z/edit?usp=drivesdk&rtpof=true&sd=true"; 
 export const GOOGLE_SHEET_RESERVATIONS_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Reservas`;
 export const GOOGLE_SHEET_EMBED_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit?usp=sharing`;
 
