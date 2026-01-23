@@ -1,7 +1,5 @@
 {
   "name": "JM Alquiler de Vehículos",
   "description": "A high-end vehicle rental management system featuring real-time availability, financial analytics, and a professional Bordeaux-themed UI.",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "requestFramePermissions": []
 }

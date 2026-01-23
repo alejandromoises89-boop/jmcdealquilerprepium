@@ -1,4 +1,3 @@
-
 import { Vehicle } from './types';
 
 export const INITIAL_FLOTA: Vehicle[] = [
@@ -24,7 +23,9 @@ export const INITIAL_FLOTA: Vehicle[] = [
     tipo: 'Compacto',
     consumo: "5.5L/100km",
     mantenimientoVence: "20/06/2026",
-    seguroVence: "10/11/2026"
+    seguroVence: "10/11/2026",
+    cuotaSeguro: 280000,
+    cuotaMantenimiento: 450000
   },
   {
     id: '3',
@@ -48,7 +49,9 @@ export const INITIAL_FLOTA: Vehicle[] = [
     tipo: 'Compacto',
     consumo: "5.5L/100km",
     mantenimientoVence: "05/04/2026",
-    seguroVence: "01/10/2026"
+    seguroVence: "01/10/2026",
+    cuotaSeguro: 280000,
+    cuotaMantenimiento: 450000
   },
   {
     id: '5',
@@ -72,7 +75,9 @@ export const INITIAL_FLOTA: Vehicle[] = [
     tipo: 'Familiar',
     consumo: "8.5L/100km",
     mantenimientoVence: "01/01/2026",
-    seguroVence: "01/01/2027"
+    seguroVence: "01/01/2027",
+    cuotaSeguro: 320000,
+    cuotaMantenimiento: 600000
   },
   {
     id: '4',
@@ -96,7 +101,9 @@ export const INITIAL_FLOTA: Vehicle[] = [
     tipo: 'Familiar',
     consumo: "10.5L/100km",
     mantenimientoVence: "10/08/2026",
-    seguroVence: "22/09/2026"
+    seguroVence: "22/09/2026",
+    cuotaSeguro: 450000,
+    cuotaMantenimiento: 900000
   },
   {
     id: '1',
@@ -120,7 +127,9 @@ export const INITIAL_FLOTA: Vehicle[] = [
     tipo: 'SUV',
     consumo: "7.8L/100km",
     mantenimientoVence: "15/05/2026",
-    seguroVence: "12/12/2026"
+    seguroVence: "12/12/2026",
+    cuotaSeguro: 350000,
+    cuotaMantenimiento: 850000
   }
 ];
 
@@ -128,6 +137,4 @@ export const GOOGLE_SHEET_ID = "1cGvNGAtCh84Gvs3-x7n0I2W-rqbG3W2z";
 export const GOOGLE_SHEET_WEBAPP_URL = "https://docs.google.com/spreadsheets/d/1cGvNGAtCh84Gvs3-x7n0I2W-rqbG3W2z/edit?usp=drivesdk&ouid=105620396881392132951&rtpof=true&sd=true"; 
 export const GOOGLE_SHEET_RESERVATIONS_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Reservas`;
 export const GOOGLE_SHEET_EMBED_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit?usp=sharing`;
-
-// Cambiado a 2025 para permitir sincronización de datos actuales
-export const FILTER_DATE_START = new Date('2025-01-01');
+export const FILTER_DATE_START = new Date('2026-01-01');

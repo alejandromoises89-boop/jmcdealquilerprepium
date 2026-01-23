@@ -2,20 +2,12 @@
 import React, { useState, useMemo } from 'react';
 import { Vehicle, Reservation, Gasto, Breakdown } from '../types';
 import { 
-  FileText, RefreshCw, Car, 
-  ShieldCheck, Trash2, TrendingUp, Wallet,
-  Search, ArrowRight,
-  AlertTriangle, Edit3, Save, Activity, Receipt,
-  UserCheck, UserX, MessageCircle, Calendar, Sparkles, CheckCircle2, ToggleLeft, ToggleRight, 
-  ArrowLeftRight, Clock, Landmark, BarChart3, PieChart as PieIcon, LineChart as LineIcon,
-  CreditCard, DollarSign, CalendarDays, PlusCircle, X
+  RefreshCw, Car, ShieldCheck, TrendingUp, Search, 
+  Activity, Settings2, CheckCircle2, 
+  Wrench, Key, DollarSign, Tag, Trash2, Edit3, Save, X,
+  Calendar, CreditCard, HeartPulse, AlertCircle, Sparkles,
+  ChevronRight, ArrowUpRight, Receipt, PieChart, FileText
 } from 'lucide-react';
-import { 
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
-  PieChart, Pie, Cell, LineChart, Line, AreaChart, Area 
-} from 'recharts';
-import ContractDocument from './ContractDocument';
-import { saveReservationToSheet } from '../services/googleSheetService';
 
 interface AdminPanelProps {
   flota: Vehicle[];
@@ -33,113 +25,28 @@ interface AdminPanelProps {
 const AdminPanel: React.FC<AdminPanelProps> = ({ 
   flota, setFlota, reservations, setReservations, gastos, setGastos, exchangeRate, onSyncSheet, isSyncing, breakdowns
 }) => {
-  const [activeSection, setActiveSection] = useState<'resumen' | 'flota' | 'registros'>('resumen');
-  const [selectedContract, setSelectedContract] = useState<{res: Reservation, veh: Vehicle} | null>(null);
+  const [activeSection, setActiveSection] = useState<'finanzas' | 'flota' | 'reservas' | 'gastos'>('finanzas');
   const [searchTerm, setSearchTerm] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [swappingResId, setSwappingResId] = useState<string | null>(null);
-  const [showManualEntry, setShowManualEntry] = useState(false);
-  const [manualData, setManualData] = useState({ cliente: '', ci: '', celular: '', auto: '', inicio: '', fin: '', total: '' });
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+  const [tempVehicleData, setTempVehicleData] = useState<Partial<Vehicle>>({});
 
-  // --- LÓGICA DE ELIMINACIÓN ---
-  const deleteReservation = (id: string) => {
-    if (window.confirm("¿Desea eliminar esta reserva permanentemente? Esta acción liberará las fechas en el calendario.")) {
-      const updated = reservations.filter(r => r.id !== id);
-      setReservations(updated);
-      localStorage.setItem('jm_reservations', JSON.stringify(updated));
-    }
+  // Auxiliares para manejo de fechas
+  const toInputDate = (str?: string) => {
+    if (!str) return "";
+    if (str.includes('-') && str.split('-')[0].length === 4) return str;
+    const parts = str.split(/[/-]/);
+    if (parts.length !== 3) return "";
+    const [d, m, y] = parts;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   };
 
-  // --- LÓGICA DE CARGA MANUAL ---
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Validación de Choque de Fechas
-    const start = new Date(manualData.inicio);
-    const end = new Date(manualData.fin);
-    
-    const hasConflict = reservations.find(r => {
-      if (r.auto !== manualData.auto || r.status === 'Cancelled') return false;
-      const rStart = new Date(r.inicio.split(' ')[0]);
-      const rEnd = new Date(r.fin.split(' ')[0]);
-      return start < rEnd && end > rStart;
-    });
-
-    if (hasConflict) {
-      alert(`⚠️ CONFLICTO DE LOGÍSTICA: La unidad "${manualData.auto}" ya tiene una reserva activa para este periodo con el cliente: ${hasConflict.cliente}.`);
-      return;
-    }
-
-    const newRes: Reservation = {
-      id: `MANUAL-${Math.floor(Math.random() * 1000)}`,
-      cliente: manualData.cliente,
-      ci: manualData.ci,
-      celular: manualData.celular,
-      auto: manualData.auto,
-      inicio: manualData.inicio,
-      fin: manualData.fin,
-      total: parseFloat(manualData.total) || 0,
-      status: 'Confirmed',
-      admissionStatus: 'Approved',
-      includeInCalendar: true
-    };
-
-    const updated = [newRes, ...reservations];
-    setReservations(updated);
-    localStorage.setItem('jm_reservations', JSON.stringify(updated));
-    setShowManualEntry(false);
-    setManualData({ cliente: '', ci: '', celular: '', auto: '', inicio: '', fin: '', total: '' });
-  };
-
-  // --- LÓGICA FINANCIERA ---
-  const totalIngresos = reservations.reduce((acc, curr) => acc + (curr.status === 'Cancelled' ? 0 : curr.total), 0);
-  const totalGastos = gastos.reduce((acc, curr) => acc + curr.monto, 0);
-  const utilidadNeta = totalIngresos - totalGastos;
-  const margenUtilidad = totalIngresos > 0 ? (utilidadNeta / totalIngresos) * 100 : 0;
-
-  // --- PREPARACIÓN DE DATOS PARA GRÁFICOS ---
-  const revenueByVehicleData = flota.map(v => {
-    const rev = reservations
-      .filter(r => r.auto.toLowerCase().includes(v.nombre.toLowerCase()) && r.status !== 'Cancelled')
-      .reduce((sum, r) => sum + r.total, 0);
-    return { name: v.nombre.split(' ')[1] || v.nombre, value: rev, full: v.nombre };
-  }).sort((a, b) => b.value - a.value);
-
-  const COLORS = ['#800000', '#D4AF37', '#3a0b0b', '#6a1d1d', '#972929', '#d14d4d'];
-
-  const performanceTrendData = [
-    { name: 'Sem 1', ingresos: totalIngresos * 0.2, gastos: totalGastos * 0.25 },
-    { name: 'Sem 2', ingresos: totalIngresos * 0.3, gastos: totalGastos * 0.15 },
-    { name: 'Sem 3', ingresos: totalIngresos * 0.25, gastos: totalGastos * 0.3 },
-    { name: 'Sem 4', ingresos: totalIngresos * 0.25, gastos: totalGastos * 0.3 },
-  ];
-
-  // --- LÓGICA DE DESGASTE ---
-  const calculateWearIndex = (vehicle: Vehicle) => {
-    let wear = 0;
-    const resCount = reservations.filter(r => r.auto.toLowerCase().includes(vehicle.nombre.toLowerCase()) && r.status === 'Confirmed').length;
-    wear += Math.min(resCount * 3, 45);
-
-    if (vehicle.mantenimientoVence) {
-      const parts = vehicle.mantenimientoVence.split('/');
-      if (parts.length === 3) {
-        const mntDate = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-        const diffDays = Math.ceil((mntDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays < 0) wear += 40;
-        else if (diffDays < 15) wear += 25;
-      }
-    }
-
-    const activeBreakdowns = breakdowns.filter(b => b.vehicleId === vehicle.id && !b.resuelta).length;
-    wear += activeBreakdowns * 15;
-
-    return Math.min(wear, 100);
-  };
-
-  const getWearColor = (index: number) => {
-    if (index > 75) return 'bg-red-600';
-    if (index > 40) return 'bg-orange-500';
-    return 'bg-green-500';
+  const toDisplayDate = (str?: string) => {
+    if (!str) return "";
+    if (str.includes('/') && str.split('/')[2].length === 4) return str;
+    const parts = str.split(/[/-]/);
+    if (parts.length !== 3) return "";
+    const [y, m, d] = parts;
+    return `${d}/${m}/${y}`;
   };
 
   const filteredReservations = useMemo(() => {
@@ -151,375 +58,459 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     );
   }, [reservations, searchTerm]);
 
-  const updateResStatus = async (id: string, status: Reservation['status'], admission: Reservation['admissionStatus'], includeInCalendar?: boolean) => {
-    const currentRes = reservations.find(r => r.id === id);
-    if (!currentRes) return;
-    const updatedRes = { ...currentRes, status, admissionStatus: admission, includeInCalendar: includeInCalendar !== undefined ? includeInCalendar : (currentRes.includeInCalendar ?? true) };
-    const updatedList = reservations.map(r => r.id === id ? updatedRes : r);
-    setReservations(updatedList);
-    localStorage.setItem('jm_reservations', JSON.stringify(updatedList));
-    if (admission === 'Approved') await saveReservationToSheet(updatedRes);
-  };
-
-  const swapVehicle = (resId: string, newVehicleName: string) => {
-    const updatedList = reservations.map(r => r.id === resId ? { ...r, auto: newVehicleName } : r);
-    setReservations(updatedList);
-    localStorage.setItem('jm_reservations', JSON.stringify(updatedList));
-    setSwappingResId(null);
-  };
-
-  const handleUpdateVehicle = (id: string, updates: Partial<Vehicle>) => {
-    const updated = flota.map(v => v.id === id ? { ...v, ...updates } : v);
-    setFlota(updated);
-    localStorage.setItem('jm_flota', JSON.stringify(updated));
-    setEditingId(null);
-  };
-
-  const sendTechnicalAlert = (vehicle: Vehicle, type: string) => {
-    const wear = calculateWearIndex(vehicle);
-    const waText = `*JM ASOCIADOS - REPORTE DE STATUS VIP*\n\n🚗 *Unidad:* ${vehicle.nombre}\n🆔 *Placa:* ${vehicle.placa}\n📊 *Desgaste:* ${wear}%\n\n🛡️ *CUOTA SEGURO:* ${vehicle.cuotaSeguro || 'Pendiente'}\n📅 Vence Seguro: ${vehicle.seguroVence || 'N/D'}\n\n🔧 *CUOTA MANTENIMIENTO:* ${vehicle.cuotaMantenimiento || 'Pendiente'}\n📅 Vence Mantenimiento: ${vehicle.mantenimientoVence || 'N/D'}\n\n⚠️ *Reporte:* ${type}\n\n_Favor moderador validar estas cuotas y vencimientos._`;
-    window.open(`https://wa.me/595993471667?text=${encodeURIComponent(waText)}`, '_blank');
-  };
-
-  if (selectedContract) {
-    return (
-      <div className="space-y-6 animate-fadeIn">
-        <button onClick={() => setSelectedContract(null)} className="flex items-center gap-3 px-6 py-3 bg-white border border-gray-100 rounded-xl text-bordeaux-800 font-bold text-xs uppercase hover:bg-gray-50 transition-colors"><ArrowRight className="rotate-180" size={16}/> Volver</button>
-        <ContractDocument vehicle={selectedContract.veh} data={selectedContract.res} days={1} totalPYG={selectedContract.res.total * exchangeRate} />
-      </div>
+  const filteredGastos = useMemo(() => {
+    const lower = searchTerm.toLowerCase();
+    return gastos.filter(g => 
+      g.concepto.toLowerCase().includes(lower) || 
+      g.categoria.toLowerCase().includes(lower)
     );
-  }
+  }, [gastos, searchTerm]);
+
+  const totalIngresos = reservations.reduce((acc, curr) => acc + (curr.status === 'Cancelled' ? 0 : curr.total), 0);
+  const totalGastos = gastos.reduce((acc, curr) => acc + curr.monto, 0);
+  const balanceNeto = totalIngresos - totalGastos;
+
+  const calculateDesgaste = (vehicleName: string) => {
+    const simpleTarget = vehicleName.toLowerCase().replace(/toyota|hyundai|blanco|negro|gris/g, '').trim();
+    const vehicleRes = reservations.filter(r => (r.auto || "").toLowerCase().includes(simpleTarget) && r.status !== 'Cancelled');
+    
+    let totalDays = 0;
+    vehicleRes.forEach(r => {
+      const partsStart = r.inicio.split(' ')[0].split(/[/-]/);
+      const partsEnd = r.fin.split(' ')[0].split(/[/-]/);
+      
+      const start = partsStart[0].length === 4 
+        ? new Date(parseInt(partsStart[0]), parseInt(partsStart[1]) - 1, parseInt(partsStart[2]))
+        : new Date(parseInt(partsStart[2]), parseInt(partsStart[1]) - 1, parseInt(partsStart[0]));
+        
+      const end = partsEnd[0].length === 4 
+        ? new Date(parseInt(partsEnd[0]), parseInt(partsEnd[1]) - 1, parseInt(partsEnd[2]))
+        : new Date(parseInt(partsEnd[2]), parseInt(partsEnd[1]) - 1, parseInt(partsEnd[0]));
+
+      const diff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      totalDays += Math.max(1, diff);
+    });
+
+    return Math.min(100, Math.round((totalDays / 50) * 100));
+  };
+
+  const handleStatusChange = (vehicleId: string, newStatus: Vehicle['estado']) => {
+    const updatedFlota = flota.map(v => v.id === vehicleId ? { ...v, estado: newStatus } : v);
+    setFlota(updatedFlota);
+  };
+
+  const startEditing = (vehicle: Vehicle) => {
+    setEditingVehicleId(vehicle.id);
+    setTempVehicleData({ ...vehicle });
+  };
+
+  const saveVehicleChanges = () => {
+    if (!editingVehicleId) return;
+    const updatedFlota = flota.map(v => v.id === editingVehicleId ? { ...v, ...tempVehicleData } as Vehicle : v);
+    setFlota(updatedFlota);
+    setEditingVehicleId(null);
+  };
 
   return (
     <div className="space-y-12 animate-fadeIn pb-24">
-      {/* Modal Carga Manual */}
-      {showManualEntry && (
-        <div className="fixed inset-0 z-[160] bg-bordeaux-950/90 backdrop-blur-xl flex items-center justify-center p-6">
-          <form onSubmit={handleManualSubmit} className="bg-white rounded-[2rem] w-full max-w-xl p-10 space-y-6 animate-slideUp border border-white/20 shadow-2xl relative">
-             <button type="button" onClick={() => setShowManualEntry(false)} className="absolute top-6 right-6 p-2 bg-gray-100 rounded-full text-gray-400 hover:text-red-600 transition-colors"><X size={20}/></button>
-             <h3 className="text-2xl font-serif font-bold text-bordeaux-950">Cargar Contrato Manual</h3>
-             <div className="space-y-4">
-                <input required type="text" placeholder="Nombre Cliente" value={manualData.cliente} onChange={e => setManualData({...manualData, cliente: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 font-semibold outline-none focus:ring-2 focus:ring-bordeaux-800 focus:bg-white transition-all text-sm" />
-                <div className="grid grid-cols-2 gap-4">
-                  <input type="text" placeholder="CI / Documento" value={manualData.ci} onChange={e => setManualData({...manualData, ci: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 font-semibold outline-none focus:bg-white text-sm" />
-                  <input type="tel" placeholder="WhatsApp" value={manualData.celular} onChange={e => setManualData({...manualData, celular: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 font-semibold outline-none focus:bg-white text-sm" />
-                </div>
-                <select required value={manualData.auto} onChange={e => setManualData({...manualData, auto: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 font-semibold outline-none focus:bg-white text-sm">
-                  <option value="">Seleccionar Unidad...</option>
-                  {flota.map(v => <option key={v.id} value={v.nombre}>{v.nombre} ({v.placa})</option>)}
-                </select>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase ml-2 tracking-wide">Salida</label>
-                    <input required type="date" value={manualData.inicio} onChange={e => setManualData({...manualData, inicio: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 font-semibold outline-none focus:bg-white text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase ml-2 tracking-wide">Retorno</label>
-                    <input required type="date" value={manualData.fin} onChange={e => setManualData({...manualData, fin: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 font-semibold outline-none focus:bg-white text-sm" />
-                  </div>
-                </div>
-                <input type="number" placeholder="Monto Total (R$)" value={manualData.total} onChange={e => setManualData({...manualData, total: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 font-semibold outline-none focus:bg-white text-sm" />
-             </div>
-             <button type="submit" className="w-full py-4 bg-bordeaux-800 text-white rounded-[1.5rem] font-bold text-xs uppercase tracking-widest hover:bg-bordeaux-950 shadow-xl transition-all">Validar y Bloquear Calendario</button>
-          </form>
-        </div>
-      )}
-
-      {/* Modal de Intercambio */}
-      {swappingResId && (
-        <div className="fixed inset-0 z-[150] bg-bordeaux-950/80 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-white rounded-[2rem] w-full max-w-2xl p-8 space-y-6 animate-slideUp border border-white/20 shadow-2xl">
-            <div className="flex justify-between items-center">
-               <h3 className="text-2xl font-serif font-bold text-bordeaux-950">Seleccionar Nueva Unidad</h3>
-               <button onClick={() => setSwappingResId(null)} className="p-2 bg-gray-50 rounded-full hover:bg-gray-100 transition-colors"><UserX size={20}/></button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto airbnb-scrollbar">
-               {flota.map(v => (
-                 <button key={v.id} onClick={() => swapVehicle(swappingResId, v.nombre)} className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl hover:bg-bordeaux-800 hover:text-white transition-all group border border-gray-100">
-                    <img src={v.img} className="w-16 h-12 object-contain group-hover:invert transition-all" />
-                    <div className="text-left">
-                       <p className="font-bold text-xs uppercase">{v.nombre}</p>
-                       <p className="text-[10px] opacity-60 uppercase">{v.placa}</p>
-                    </div>
-                 </button>
-               ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Header Panel Ajustado */}
+      {/* Header Premium */}
       <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-b border-gray-100 pb-8 mt-4">
         <div className="space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-bordeaux-950 text-gold rounded-lg text-[10px] font-bold uppercase tracking-widest shadow-lg"><ShieldCheck size={14}/> JM INTELLIGENCE HUB</div>
-          <h2 className="text-3xl md:text-5xl font-serif font-bold text-bordeaux-950 tracking-tight">Master Console</h2>
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-bordeaux-950 text-gold rounded-lg text-[10px] font-bold uppercase tracking-widest shadow-xl">
+            <ShieldCheck size={14}/> JM INTELLIGENCE HUB
+          </div>
+          <h2 className="text-3xl md:text-5xl font-serif font-bold text-bordeaux-950 tracking-tight italic">
+            Gestión <span className="text-gold">Corporativa</span>
+          </h2>
         </div>
-        <div className="flex gap-3">
-           <button onClick={() => setShowManualEntry(true)} className="px-5 py-3 bg-white border border-gray-200 text-bordeaux-800 rounded-xl font-bold text-[10px] uppercase flex items-center gap-2 hover:bg-bordeaux-50 hover:border-bordeaux-200 shadow-sm transition-all">
-            <PlusCircle size={16}/> Cargar Histórico
-          </button>
-          <button onClick={onSyncSheet} disabled={isSyncing} className="px-5 py-3 bg-bordeaux-800 text-white rounded-xl font-bold text-[10px] uppercase flex items-center gap-2 hover:bg-bordeaux-950 shadow-lg transition-all">
-            <RefreshCw className={isSyncing ? 'animate-spin' : ''} size={16}/> {isSyncing ? 'Sync...' : 'Cloud Sync'}
-          </button>
-        </div>
+        <button 
+          onClick={onSyncSheet} 
+          disabled={isSyncing} 
+          className="px-8 py-4 bg-bordeaux-800 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-3 hover:bg-bordeaux-950 transition-all shadow-xl hover:scale-[1.02] active:scale-95 disabled:opacity-50"
+        >
+          <RefreshCw className={isSyncing ? 'animate-spin' : ''} size={16}/> 
+          {isSyncing ? 'Sincronizando...' : 'Actualizar Nodo Cloud'}
+        </button>
       </div>
 
-      {/* Navegación Panel */}
-      <div className="flex bg-gray-50 p-1.5 rounded-[2rem] border border-gray-100 overflow-x-auto airbnb-scrollbar">
+      {/* Navigation Tabs - Estética de Lujo */}
+      <div className="flex bg-gray-50/80 backdrop-blur-md p-2 rounded-[2.5rem] border border-gray-100 overflow-x-auto scrollbar-hide shadow-inner">
         {[
-          { id: 'resumen', label: 'Dashboard', icon: TrendingUp },
-          { id: 'flota', label: 'Status & Desgaste', icon: Car },
-          { id: 'registros', label: 'Admisión VIP', icon: ShieldCheck }
+          { id: 'finanzas', label: 'Resumen Financiero', icon: PieChart },
+          { id: 'flota', label: 'Estatus Unidades', icon: Car },
+          { id: 'reservas', label: 'Registro Reservas', icon: Calendar },
+          { id: 'gastos', label: 'Control Gastos', icon: Receipt }
         ].map(tab => (
-          <button key={tab.id} onClick={() => setActiveSection(tab.id as any)} className={`relative flex items-center gap-3 px-8 py-3 rounded-[1.5rem] text-[10px] font-bold uppercase tracking-widest transition-all ${activeSection === tab.id ? 'text-white' : 'text-gray-500 hover:text-bordeaux-800'}`}>
-            {activeSection === tab.id && <div className="absolute inset-0 bordeaux-gradient rounded-[1.5rem] shadow-md animate-fadeIn"></div>}
-            <tab.icon size={16} className="relative z-10" /><span className="relative z-10">{tab.label}</span>
+          <button 
+            key={tab.id} 
+            onClick={() => setActiveSection(tab.id as any)} 
+            className={`relative flex items-center gap-3 px-8 py-4 rounded-[2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-500 whitespace-nowrap ${
+              activeSection === tab.id ? 'text-white' : 'text-gray-400 hover:text-bordeaux-800'
+            }`}
+          >
+            {activeSection === tab.id && (
+              <div className="absolute inset-0 bordeaux-gradient rounded-[2rem] shadow-lg animate-fadeIn"></div>
+            )}
+            <tab.icon size={16} className="relative z-10" />
+            <span className="relative z-10">{tab.label}</span>
           </button>
         ))}
       </div>
 
       <div className="mt-8">
-        {activeSection === 'resumen' && (
-          <div className="space-y-10">
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-xl space-y-5 group hover:-translate-y-1 transition-transform">
-                <div className="w-12 h-12 bg-bordeaux-50 rounded-2xl flex items-center justify-center text-bordeaux-800 group-hover:bg-bordeaux-800 group-hover:text-white transition-colors"><Wallet size={24} /></div>
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Ingresos Totales (BRL/PYG)</p>
-                  <h4 className="text-3xl font-black text-bordeaux-950">R$ {totalIngresos.toLocaleString()}</h4>
-                  <p className="text-xs font-bold text-gold">Gs. {(totalIngresos * exchangeRate).toLocaleString()}</p>
+        {activeSection === 'finanzas' && (
+          <div className="space-y-8 animate-fadeIn">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-xl space-y-4 hover:shadow-2xl transition-all border-l-4 border-l-green-500">
+                <div className="flex justify-between items-center">
+                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Ingresos Brutos</p>
+                   <ArrowUpRight className="text-green-500" size={20} />
                 </div>
+                <h4 className="text-4xl font-black text-bordeaux-950 tracking-tighter">R$ {totalIngresos.toLocaleString()}</h4>
+                <p className="text-xs font-bold text-gold">Gs. {(totalIngresos * exchangeRate).toLocaleString()}</p>
               </div>
-
-              <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-xl space-y-5 group hover:-translate-y-1 transition-transform">
-                <div className="w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center text-red-600 group-hover:bg-red-600 group-hover:text-white transition-colors"><Activity size={24} /></div>
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Flota Operativa</p>
-                  <h4 className="text-3xl font-black text-red-950">{flota.length} Unidades</h4>
-                  <p className="text-xs font-bold text-red-400">Control de Desgaste Activo</p>
+              <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-xl space-y-4 hover:shadow-2xl transition-all border-l-4 border-l-red-500">
+                <div className="flex justify-between items-center">
+                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Gastos Operativos</p>
+                   <TrendingUp className="text-red-500 rotate-180" size={20} />
                 </div>
+                <h4 className="text-4xl font-black text-bordeaux-950 tracking-tighter">R$ {totalGastos.toLocaleString()}</h4>
+                <p className="text-xs font-bold text-gold">Gs. {(totalGastos * exchangeRate).toLocaleString()}</p>
               </div>
-
-              <div className="bg-bordeaux-950 p-8 rounded-[2.5rem] border border-white/5 shadow-xl space-y-5 group hover:-translate-y-1 transition-transform">
-                <div className="w-12 h-12 bg-gold rounded-2xl flex items-center justify-center text-bordeaux-950 group-hover:scale-110 transition-transform"><TrendingUp size={24} /></div>
-                <div className="text-white">
-                  <p className="text-[10px] font-bold text-gold uppercase tracking-widest mb-1">Margen de Operación</p>
-                  <h4 className="text-3xl font-black">{margenUtilidad.toFixed(1)}%</h4>
-                  <p className="text-xs font-bold opacity-60">Optimización Premium</p>
+              <div className="bordeaux-gradient p-10 rounded-[3rem] shadow-2xl space-y-4 hover:scale-[1.02] transition-all">
+                <div className="flex justify-between items-center">
+                   <p className="text-[10px] font-black text-gold/60 uppercase tracking-widest">Balance Neto</p>
+                   <Sparkles className="text-gold" size={20} />
                 </div>
+                <h4 className="text-4xl font-black text-white tracking-tighter">R$ {balanceNeto.toLocaleString()}</h4>
+                <p className="text-xs font-bold text-gold/80">Rendimiento Mensual VIP</p>
               </div>
             </div>
 
-            {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-lg space-y-6">
-                <div className="flex justify-between items-center">
-                   <h3 className="text-lg font-serif font-bold text-bordeaux-950 flex items-center gap-2"><LineIcon size={18} className="text-gold"/> Rendimiento Mensual</h3>
-                   <span className="text-[10px] font-bold text-gray-400 uppercase">Valores en R$</span>
-                </div>
-                <div className="h-[250px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={performanceTrendData}>
-                      <defs>
-                        <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#800000" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#800000" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 'bold', fill: '#9CA3AF'}} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 'bold', fill: '#9CA3AF'}} />
-                      <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', padding: '12px'}} />
-                      <Area type="monotone" dataKey="ingresos" stroke="#800000" fillOpacity={1} fill="url(#colorIngresos)" strokeWidth={3} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-lg space-y-6">
-                <div className="flex justify-between items-center">
-                   <h3 className="text-lg font-serif font-bold text-bordeaux-950 flex items-center gap-2"><PieIcon size={18} className="text-gold"/> Profit Share por Unidad</h3>
-                   <span className="text-[10px] font-bold text-gray-400 uppercase">Cash Flow Distribution</span>
-                </div>
-                <div className="h-[250px] w-full flex flex-col md:flex-row items-center">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={revenueByVehicleData} innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value">
-                        {revenueByVehicleData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="space-y-2 min-w-[120px]">
-                     {revenueByVehicleData.slice(0, 4).map((item, idx) => (
-                       <div key={idx} className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full" style={{backgroundColor: COLORS[idx]}}></div>
-                          <p className="text-[10px] font-bold uppercase text-gray-500">{item.name}</p>
-                       </div>
-                     ))}
+            {/* Sub-Resumen Gráfico o Informativo */}
+            <div className="bg-gray-50 p-10 rounded-[4rem] border border-gray-100 flex flex-col md:flex-row items-center justify-between gap-8">
+               <div className="flex items-center gap-6">
+                  <div className="w-16 h-16 bg-white rounded-[1.5rem] flex items-center justify-center text-gold shadow-lg">
+                     <Activity size={32} />
                   </div>
-                </div>
-              </div>
+                  <div className="space-y-1">
+                     <h5 className="text-xl font-serif font-bold text-bordeaux-950">Salud de la Flota</h5>
+                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Monitoreo de disponibilidad en tiempo real</p>
+                  </div>
+               </div>
+               <div className="flex gap-10">
+                  <div className="text-center">
+                     <p className="text-3xl font-black text-bordeaux-950">{flota.filter(v => v.estado === 'Disponible').length}</p>
+                     <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Disponibles</p>
+                  </div>
+                  <div className="text-center">
+                     <p className="text-3xl font-black text-gold">{flota.filter(v => v.estado === 'En Alquiler').length}</p>
+                     <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">En Ruta</p>
+                  </div>
+                  <div className="text-center">
+                     <p className="text-3xl font-black text-red-600">{flota.filter(v => v.estado === 'En Taller').length}</p>
+                     <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Mantenimiento</p>
+                  </div>
+               </div>
             </div>
           </div>
         )}
 
         {activeSection === 'flota' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {flota.map(v => {
-              const wear = calculateWearIndex(v);
-              const totalVehRev = reservations.filter(r => r.auto.toLowerCase().includes(v.nombre.toLowerCase()) && r.status !== 'Cancelled').reduce((s, r) => s + r.total, 0);
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fadeIn">
+            {flota.map((vehicle) => {
+              const desgaste = calculateDesgaste(vehicle.nombre);
               return (
-                <div key={v.id} className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-lg space-y-6 relative overflow-hidden group hover:shadow-xl transition-shadow">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-4">
-                      <img src={v.img} className="w-16 h-16 object-contain mix-blend-multiply group-hover:scale-105 transition-transform" />
-                      <div>
-                        <h4 className="font-bold text-lg text-bordeaux-950">{v.nombre}</h4>
-                        <span className="text-[10px] font-bold text-gold tracking-[0.3em] uppercase">{v.placa}</span>
-                      </div>
+                <div key={vehicle.id} className="bg-white rounded-[3.5rem] border border-gray-100 shadow-xl overflow-hidden p-10 space-y-8 group hover:border-gold/20 transition-all duration-700">
+                  <div className="flex flex-col md:flex-row gap-8">
+                    <div className="w-full md:w-48 h-48 bg-gray-50 rounded-[3rem] p-6 flex items-center justify-center shrink-0 shadow-inner group-hover:scale-105 transition-transform duration-700">
+                      <img src={vehicle.img} alt={vehicle.nombre} className="max-w-full max-h-full object-contain mix-blend-multiply" />
                     </div>
-                    <div className="text-right">
-                       <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Rentabilidad</p>
-                       <p className="text-sm font-black text-green-600">R$ {totalVehRev.toLocaleString()}</p>
+                    
+                    <div className="flex-1 space-y-6">
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-2">
+                          <h3 className="text-3xl font-serif font-bold text-bordeaux-950 tracking-tight">{vehicle.nombre}</h3>
+                          <div className="flex items-center gap-2">
+                             <div className="px-3 py-1 bg-bordeaux-50 text-bordeaux-800 rounded-lg text-[9px] font-black uppercase tracking-widest">
+                               {vehicle.placa}
+                             </div>
+                             <span className="text-[9px] font-bold text-gray-300 uppercase tracking-widest">{vehicle.color}</span>
+                          </div>
+                        </div>
+                        <button onClick={() => startEditing(vehicle)} className="p-4 bg-gray-50 rounded-2xl text-gray-400 hover:text-bordeaux-800 hover:bg-white hover:shadow-lg transition-all active:scale-90">
+                          <Edit3 size={18} />
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                           <span className="flex items-center gap-2 text-gray-400"><HeartPulse size={14} className="text-red-500" /> Fatiga de Unidad</span>
+                           <span className={desgaste > 80 ? 'text-red-600' : 'text-bordeaux-800'}>{desgaste}%</span>
+                        </div>
+                        <div className="h-2.5 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
+                           <div 
+                              className={`h-full transition-all duration-1000 ${desgaste > 80 ? 'bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.4)]' : desgaste > 50 ? 'bg-orange-500' : 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'}`} 
+                              style={{ width: `${desgaste}%` }}
+                           />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        {['Disponible', 'En Taller', 'En Alquiler'].map((st) => (
+                          <button 
+                            key={st} 
+                            onClick={() => handleStatusChange(vehicle.id, st as any)}
+                            className={`flex-1 py-4 rounded-2xl border text-[9px] font-black uppercase tracking-widest transition-all duration-500 ${
+                              vehicle.estado === st 
+                              ? 'bg-bordeaux-950 text-white border-bordeaux-950 shadow-xl scale-105' 
+                              : 'bg-white text-gray-300 border-gray-100 hover:bg-gray-50 hover:text-bordeaux-800'
+                            }`}
+                          >
+                            {st}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Monitor de Desgaste Visual */}
-                  <div className="space-y-2 bg-gray-50 p-5 rounded-3xl">
-                    <div className="flex justify-between items-center">
-                       <p className="text-[9px] font-bold text-bordeaux-950 uppercase tracking-widest flex items-center gap-2"><Activity size={12} className="text-gold"/> Índice de Desgaste</p>
-                       <span className={`text-[10px] font-black ${wear > 75 ? 'text-red-600' : 'text-bordeaux-800'}`}>{wear}%</span>
+                  {editingVehicleId === vehicle.id ? (
+                    <div className="bg-gray-50/50 p-8 rounded-[2.5rem] space-y-8 animate-slideDown border border-gray-100">
+                       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                          <div className="space-y-2">
+                            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Seguro Expira</label>
+                            <input 
+                              type="date" 
+                              value={toInputDate(tempVehicleData.seguroVence)} 
+                              onChange={(e) => setTempVehicleData({...tempVehicleData, seguroVence: toDisplayDate(e.target.value)})} 
+                              className="w-full px-5 py-4 rounded-2xl border-0 bg-white text-[11px] font-bold shadow-sm outline-none focus:ring-4 focus:ring-gold/10 transition-all" 
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Fee Seguro</label>
+                            <input 
+                              type="number" 
+                              value={tempVehicleData.cuotaSeguro || 0} 
+                              onChange={(e) => setTempVehicleData({...tempVehicleData, cuotaSeguro: parseFloat(e.target.value)})} 
+                              className="w-full px-5 py-4 rounded-2xl border-0 bg-white text-[11px] font-bold shadow-sm outline-none focus:ring-4 focus:ring-gold/10 transition-all" 
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Próx. Service</label>
+                            <input 
+                              type="date" 
+                              value={toInputDate(tempVehicleData.mantenimientoVence)} 
+                              onChange={(e) => setTempVehicleData({...tempVehicleData, mantenimientoVence: toDisplayDate(e.target.value)})} 
+                              className="w-full px-5 py-4 rounded-2xl border-0 bg-white text-[11px] font-bold shadow-sm outline-none focus:ring-4 focus:ring-gold/10 transition-all" 
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Costo Mant.</label>
+                            <input 
+                              type="number" 
+                              value={tempVehicleData.cuotaMantenimiento || 0} 
+                              onChange={(e) => setTempVehicleData({...tempVehicleData, cuotaMantenimiento: parseFloat(e.target.value)})} 
+                              className="w-full px-5 py-4 rounded-2xl border-0 bg-white text-[11px] font-bold shadow-sm outline-none focus:ring-4 focus:ring-gold/10 transition-all" 
+                            />
+                          </div>
+                       </div>
+                       <div className="flex gap-4">
+                          <button onClick={saveVehicleChanges} className="flex-1 bordeaux-gradient text-white py-5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"><Save size={18} /> Consolidar Cambios</button>
+                          <button onClick={() => setEditingVehicleId(null)} className="px-10 bg-white border border-gray-100 text-gray-400 py-5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:text-red-500 transition-all">Cancelar</button>
+                       </div>
                     </div>
-                    <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-                       <div className={`h-full transition-all duration-1000 ${getWearColor(wear)}`} style={{width: `${wear}%`}}></div>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                       <div className="p-5 bg-gray-50/50 rounded-3xl border border-gray-100 space-y-2 hover:bg-white transition-colors">
+                          <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Seguro Vence</p>
+                          <p className="text-[11px] font-bold text-bordeaux-950 flex items-center gap-2"><Calendar size={14} className="text-gold" /> {vehicle.seguroVence || '---'}</p>
+                       </div>
+                       <div className="p-5 bg-gray-50/50 rounded-3xl border border-gray-100 space-y-2 hover:bg-white transition-colors">
+                          <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Cuota Seguro</p>
+                          <p className="text-[11px] font-bold text-bordeaux-950 flex items-center gap-2"><CreditCard size={14} className="text-gold" /> Gs. {vehicle.cuotaSeguro?.toLocaleString() || 0}</p>
+                       </div>
+                       <div className="p-5 bg-gray-50/50 rounded-3xl border border-gray-100 space-y-2 hover:bg-white transition-colors">
+                          <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Próx. Mant.</p>
+                          <p className="text-[11px] font-bold text-bordeaux-950 flex items-center gap-2"><Wrench size={14} className="text-gold" /> {vehicle.mantenimientoVence || 'Pendiente'}</p>
+                       </div>
+                       <div className="p-5 bg-gray-50/50 rounded-3xl border border-gray-100 space-y-2 hover:bg-white transition-colors">
+                          <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Costo Mant.</p>
+                          <p className="text-[11px] font-bold text-bordeaux-950 flex items-center gap-2"><DollarSign size={14} className="text-gold" /> Gs. {vehicle.cuotaMantenimiento?.toLocaleString() || 0}</p>
+                       </div>
                     </div>
-                  </div>
-
-                  {/* Edición de Cuotas y Vencimientos */}
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* SEGURO */}
-                    <div className="p-4 rounded-2xl border border-gray-100 space-y-2 bg-bordeaux-50/20">
-                      <p className="text-[9px] font-bold uppercase text-gray-400 tracking-widest flex items-center gap-1"><CreditCard size={10}/> Seguro</p>
-                      
-                      {/* Monto Cuota Seguro */}
-                      <div className="space-y-0.5">
-                        <div className="flex items-center justify-between">
-                           {editingId === `cseg-${v.id}` ? (
-                             <input type="text" defaultValue={v.cuotaSeguro} onBlur={(e) => handleUpdateVehicle(v.id, {cuotaSeguro: e.target.value})} className="w-full text-[11px] font-bold bg-transparent border-b border-gold outline-none" autoFocus />
-                           ) : (
-                             <p className="text-[11px] font-bold text-bordeaux-950 cursor-pointer hover:text-bordeaux-700" onClick={() => setEditingId(`cseg-${v.id}`)}>{v.cuotaSeguro || 'Definir...'}</p>
-                           )}
-                           <Edit3 size={10} className="opacity-30" />
-                        </div>
-                      </div>
-
-                      {/* Vencimiento Seguro */}
-                      <div className="space-y-0.5 pt-1 border-t border-bordeaux-100/30">
-                        <div className="flex items-center justify-between">
-                           {editingId === `vseg-${v.id}` ? (
-                             <input type="text" placeholder="DD/MM/YYYY" defaultValue={v.seguroVence} onBlur={(e) => handleUpdateVehicle(v.id, {seguroVence: e.target.value})} className="w-full text-[10px] font-bold bg-transparent border-b border-gold outline-none" autoFocus />
-                           ) : (
-                             <p className="text-[10px] font-bold text-bordeaux-800 cursor-pointer hover:text-bordeaux-600" onClick={() => setEditingId(`vseg-${v.id}`)}>{v.seguroVence || 'N/D'}</p>
-                           )}
-                           <Edit3 size={10} className="opacity-30" />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* MANTENIMIENTO */}
-                    <div className="p-4 rounded-2xl border border-gray-100 space-y-2 bg-gray-50/50">
-                      <p className="text-[9px] font-bold uppercase text-gray-400 tracking-widest flex items-center gap-1"><DollarSign size={10}/> Mant.</p>
-                      
-                      {/* Monto Cuota Mant */}
-                      <div className="space-y-0.5">
-                        <div className="flex items-center justify-between">
-                           {editingId === `cmnt-${v.id}` ? (
-                             <input type="text" defaultValue={v.cuotaMantenimiento} onBlur={(e) => handleUpdateVehicle(v.id, {cuotaMantenimiento: e.target.value})} className="w-full text-[11px] font-bold bg-transparent border-b border-gold outline-none" autoFocus />
-                           ) : (
-                             <p className="text-[11px] font-bold text-bordeaux-950 cursor-pointer hover:text-bordeaux-700" onClick={() => setEditingId(`cmnt-${v.id}`)}>{v.cuotaMantenimiento || 'Definir...'}</p>
-                           )}
-                           <Edit3 size={10} className="opacity-30" />
-                        </div>
-                      </div>
-
-                      {/* Vencimiento Mant */}
-                      <div className="space-y-0.5 pt-1 border-t border-gray-200">
-                        <div className="flex items-center justify-between">
-                           {editingId === `vmnt-${v.id}` ? (
-                             <input type="text" placeholder="DD/MM/YYYY" defaultValue={v.mantenimientoVence} onBlur={(e) => handleUpdateVehicle(v.id, {mantenimientoVence: e.target.value})} className="w-full text-[10px] font-bold bg-transparent border-b border-gold outline-none" autoFocus />
-                           ) : (
-                             <p className="text-[10px] font-bold text-bordeaux-800 cursor-pointer hover:text-bordeaux-600" onClick={() => setEditingId(`vmnt-${v.id}`)}>{v.mantenimientoVence || 'N/D'}</p>
-                           )}
-                           <Edit3 size={10} className="opacity-30" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <button onClick={() => sendTechnicalAlert(v, 'Actualización de Status, Cuotas y Vencimientos')} className="w-full py-4 bg-bordeaux-800 text-white rounded-2xl text-[10px] font-bold uppercase tracking-[0.3em] shadow-md hover:bg-bordeaux-950 transition-all hover:shadow-lg">Reportar al Moderador</button>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
 
-        {activeSection === 'registros' && (
-          <div className="bg-white rounded-[3rem] border border-gray-100 shadow-xl overflow-hidden">
-            <div className="p-8 border-b border-gray-100 bg-bordeaux-50/10 flex justify-between items-center">
-              <div><h3 className="text-xl font-serif font-bold text-bordeaux-950">Admisión VIP & Calendario</h3><p className="text-[10px] font-bold text-gold uppercase tracking-[0.3em]">Gestión de flota e intercambios</p></div>
-              <div className="relative flex items-center gap-4">
-                 <div className="relative group">
-                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-bordeaux-800 transition-colors" size={14} />
-                   <input type="text" placeholder="Buscar cliente o unidad..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl outline-none text-xs font-bold w-64 shadow-sm focus:border-bordeaux-200 focus:ring-2 focus:ring-bordeaux-50 transition-all" />
-                 </div>
+        {/* TABLA DE RESERVAS PREMIUM */}
+        {activeSection === 'reservas' && (
+          <div className="bg-white rounded-[3.5rem] border border-gray-100 shadow-2xl overflow-hidden animate-fadeIn">
+            <div className="p-10 border-b border-gray-100 flex flex-col md:flex-row justify-between items-center gap-6 bg-gray-50/30">
+              <div className="space-y-1 text-center md:text-left">
+                <h3 className="text-2xl font-serif font-bold text-bordeaux-950 italic">Libro de Reservas VIP</h3>
+                <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em]">Protocolo de Clientes Platinum</p>
+              </div>
+              <div className="relative group">
+                <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-gold transition-colors" size={16} />
+                <input 
+                  type="text" 
+                  placeholder="Filtrar por nombre, auto o ID..." 
+                  value={searchTerm} 
+                  onChange={(e) => setSearchTerm(e.target.value)} 
+                  className="pl-14 pr-8 py-5 bg-white border border-gray-100 rounded-[2rem] outline-none text-[11px] font-black uppercase tracking-widest w-full md:w-80 shadow-sm focus:ring-4 focus:ring-gold/5 transition-all" 
+                />
               </div>
             </div>
             <div className="overflow-x-auto airbnb-scrollbar">
-              <table className="w-full text-left">
-                <thead className="bg-bordeaux-950 text-gold text-[10px] font-bold uppercase tracking-widest">
-                  <tr>
-                    <th className="px-8 py-5">ID / Cliente</th>
-                    <th className="px-8 py-5">Unidad</th>
-                    <th className="px-8 py-5">Entrega</th>
-                    <th className="px-8 py-5">Retorno</th>
-                    <th className="px-8 py-5 text-center">Calendario</th>
-                    <th className="px-8 py-5 text-center">Acciones</th>
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bordeaux-gradient text-gold text-[10px] font-black uppercase tracking-[0.3em]">
+                    <th className="px-10 py-7 rounded-tl-[3.5rem]">Expediente / Cliente</th>
+                    <th className="px-10 py-7">Unidad Asignada</th>
+                    <th className="px-10 py-7">Cronograma VIP</th>
+                    <th className="px-10 py-7">Canon Arrendamiento</th>
+                    <th className="px-10 py-7 rounded-tr-[3.5rem] text-center">Protocolo</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 text-xs">
+                <tbody className="divide-y divide-gray-50">
                   {filteredReservations.map(res => (
-                    <tr key={res.id} className="hover:bg-bordeaux-50 transition-all group">
-                      <td className="px-8 py-5">
-                        <p className="text-[9px] font-black text-gold mb-0.5">#{res.id}</p>
-                        <p className="font-bold text-gray-900 uppercase text-[11px]">{res.cliente}</p>
-                        <p className="text-[10px] text-gray-400">{res.ci}</p>
-                      </td>
-                      <td className="px-8 py-5">
-                        <div className="flex items-center gap-2">
-                           <p className="text-[11px] font-bold text-bordeaux-900 uppercase">{res.auto}</p>
-                           <button onClick={() => setSwappingResId(res.id)} className="p-1.5 bg-white rounded-lg border border-gray-100 opacity-0 group-hover:opacity-100 transition-all text-bordeaux-800 hover:bg-bordeaux-800 hover:text-white shadow-sm" title="Cambiar Unidad"><ArrowLeftRight size={14} /></button>
+                    <tr key={res.id} className="group hover:bg-bordeaux-50/40 transition-all duration-500">
+                      <td className="px-10 py-8">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-bordeaux-800 font-black text-[10px] group-hover:bg-white shadow-sm border border-transparent group-hover:border-gold/20 transition-all">
+                             {res.cliente.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="font-black text-bordeaux-950 uppercase tracking-widest text-[11px] mb-0.5">{res.cliente}</p>
+                            <p className="text-[9px] text-gray-400 font-bold">ID: {res.id} &bull; CI: {res.ci}</p>
+                          </div>
                         </div>
                       </td>
-                      <td className="px-8 py-5"><div className="flex items-center gap-2 text-gray-700 font-bold text-[10px] uppercase"><Clock size={12} className="text-gold" /> {res.inicio}</div></td>
-                      <td className="px-8 py-5"><div className="flex items-center gap-2 text-gray-700 font-bold text-[10px] uppercase"><Clock size={12} className="text-gold" /> {res.fin}</div></td>
-                      <td className="px-8 py-5 text-center">
-                        <button onClick={() => updateResStatus(res.id, res.status, res.admissionStatus!, !(res.includeInCalendar ?? true))} className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest transition-all ${res.includeInCalendar ?? true ? 'bg-bordeaux-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}>
-                          {res.includeInCalendar ?? true ? <><ToggleRight size={16}/> Cargado</> : <><ToggleLeft size={16}/> Omitir</>}
-                        </button>
+                      <td className="px-10 py-8">
+                         <div className="flex items-center gap-3">
+                            <Car size={16} className="text-gold opacity-50" />
+                            <span className="font-black uppercase text-gray-600 tracking-wider text-[11px]">{res.auto}</span>
+                         </div>
                       </td>
-                      <td className="px-8 py-5">
-                        <div className="flex justify-center gap-2">
-                          <button onClick={() => updateResStatus(res.id, 'Confirmed', 'Approved')} className={`p-2 rounded-xl transition-all ${res.status === 'Confirmed' ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-300 hover:text-green-600 hover:bg-green-50'}`} title="Aprobar"><UserCheck size={16}/></button>
-                          <button onClick={() => deleteReservation(res.id)} className="p-2 rounded-xl bg-gray-50 text-gray-300 hover:text-red-600 hover:bg-red-50 transition-all" title="Eliminar Permanente"><Trash2 size={16}/></button>
+                      <td className="px-10 py-8">
+                        <div className="space-y-1">
+                          <p className="font-black text-bordeaux-950 text-[10px] flex items-center gap-2">
+                             <Calendar size={12} className="text-gold" /> {res.inicio}
+                          </p>
+                          <p className="text-[10px] font-bold text-gray-400 pl-5">Hasta: {res.fin}</p>
+                        </div>
+                      </td>
+                      <td className="px-10 py-8">
+                        <div className="space-y-1">
+                           <p className="font-black text-bordeaux-800 text-[12px]">R$ {res.total.toLocaleString()}</p>
+                           <p className="text-[9px] font-bold text-gray-300">Gs. {(res.total * exchangeRate).toLocaleString()}</p>
+                        </div>
+                      </td>
+                      <td className="px-10 py-8 text-center">
+                        <span className={`inline-block px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-sm ${
+                          res.status === 'Confirmed' || res.status === 'Requested' 
+                          ? 'bg-green-50 text-green-600 border border-green-100' 
+                          : 'bg-red-50 text-red-600 border border-red-100'
+                        }`}>
+                          {res.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredReservations.length === 0 && (
+                    <tr>
+                       <td colSpan={5} className="px-10 py-32 text-center">
+                          <div className="space-y-4">
+                             <FileText size={48} className="mx-auto text-gray-100" />
+                             <p className="text-gray-300 font-black uppercase tracking-[0.5em] text-[10px]">Sin expedientes registrados</p>
+                          </div>
+                       </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TABLA DE GASTOS PREMIUM */}
+        {activeSection === 'gastos' && (
+          <div className="bg-white rounded-[3.5rem] border border-gray-100 shadow-2xl overflow-hidden animate-fadeIn">
+            <div className="p-10 border-b border-gray-100 flex flex-col md:flex-row justify-between items-center gap-6 bg-gray-50/30">
+              <div className="space-y-1 text-center md:text-left">
+                <h3 className="text-2xl font-serif font-bold text-bordeaux-950 italic">Control de Egresos</h3>
+                <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em]">Auditoría de Gastos Operativos</p>
+              </div>
+              <div className="relative group">
+                <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-gold transition-colors" size={16} />
+                <input 
+                  type="text" 
+                  placeholder="Buscar por concepto o categoría..." 
+                  value={searchTerm} 
+                  onChange={(e) => setSearchTerm(e.target.value)} 
+                  className="pl-14 pr-8 py-5 bg-white border border-gray-100 rounded-[2rem] outline-none text-[11px] font-black uppercase tracking-widest w-full md:w-80 shadow-sm focus:ring-4 focus:ring-gold/5 transition-all" 
+                />
+              </div>
+            </div>
+            <div className="overflow-x-auto airbnb-scrollbar">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-900 text-gold text-[10px] font-black uppercase tracking-[0.3em]">
+                    <th className="px-10 py-7">Concepto de Gasto</th>
+                    <th className="px-10 py-7">Categoría Corporativa</th>
+                    <th className="px-10 py-7">Fecha Registro</th>
+                    <th className="px-10 py-7 text-right">Importe BRL</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {filteredGastos.map(g => (
+                    <tr key={g.id} className="group hover:bg-gray-50 transition-all duration-300">
+                      <td className="px-10 py-8">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-red-600 shadow-sm">
+                             <Receipt size={18} />
+                          </div>
+                          <p className="font-black text-bordeaux-950 uppercase tracking-widest text-[11px]">{g.concepto}</p>
+                        </div>
+                      </td>
+                      <td className="px-10 py-8">
+                         <span className="px-4 py-1.5 bg-gray-100 text-gray-500 rounded-lg text-[9px] font-black uppercase tracking-widest">
+                            {g.categoria}
+                         </span>
+                      </td>
+                      <td className="px-10 py-8 font-bold text-gray-400 text-[10px]">
+                        {g.fecha}
+                      </td>
+                      <td className="px-10 py-8 text-right">
+                        <div className="space-y-0.5">
+                           <p className="font-black text-red-600 text-[12px]">- R$ {g.monto.toLocaleString()}</p>
+                           <p className="text-[9px] font-bold text-gray-300">Gs. {(g.monto * exchangeRate).toLocaleString()}</p>
                         </div>
                       </td>
                     </tr>
                   ))}
+                  {filteredGastos.length === 0 && (
+                    <tr>
+                       <td colSpan={4} className="px-10 py-32 text-center">
+                          <div className="space-y-4">
+                             <Receipt size={48} className="mx-auto text-gray-100" />
+                             <p className="text-gray-300 font-black uppercase tracking-[0.5em] text-[10px]">No se registran egresos en este nodo</p>
+                          </div>
+                       </td>
+                    </tr>
+                  )}
                 </tbody>
+                {filteredGastos.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-gray-50/50">
+                       <td colSpan={3} className="px-10 py-8 text-right font-black text-bordeaux-950 uppercase tracking-[0.2em] text-[10px]">Total Egresos:</td>
+                       <td className="px-10 py-8 text-right font-black text-red-600 text-lg">R$ {totalGastos.toLocaleString()}</td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </div>

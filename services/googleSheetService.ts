@@ -14,8 +14,7 @@ const parseCSV = (text: string): string[][] => {
 
     if (inQuotes) {
       if (char === '"' && nextChar === '"') {
-        currentField += '"';
-        i++;
+        currentField += '"'; i++;
       } else if (char === '"') {
         inQuotes = false;
       } else {
@@ -28,112 +27,102 @@ const parseCSV = (text: string): string[][] => {
         row.push(currentField.trim());
         currentField = '';
       } else if (char === '\n' || char === '\r') {
-        if (currentField || row.length > 0) {
-          row.push(currentField.trim());
-          result.push(row);
-        }
-        row = [];
-        currentField = '';
+        row.push(currentField.trim());
+        if (row.length > 0) result.push(row);
+        row = []; currentField = '';
         if (char === '\r' && nextChar === '\n') i++;
       } else {
         currentField += char;
       }
     }
   }
-  
   if (currentField || row.length > 0) {
     row.push(currentField.trim());
     result.push(row);
   }
-
   return result;
 };
 
 export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000); 
+
   try {
-    console.log("[JM-CLOUD] Conectando con Google Sheets...");
-    
-    // El cache_bust es vital para que no lea datos viejos
-    const response = await fetch(`${GOOGLE_SHEET_RESERVATIONS_URL}&cache_bust=${Date.now()}`);
-    
-    if (!response.ok) {
-      throw new Error(`Google Sheets no respondió (Código: ${response.status})`);
-    }
+    const response = await fetch(`${GOOGLE_SHEET_RESERVATIONS_URL}&cache_bust=${Date.now()}`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) return null;
 
     const csvText = await response.text();
-    
-    // Verificación de acceso público
-    if (csvText.includes('<!DOCTYPE html>') || csvText.includes('login')) {
-      throw new Error("ACCESO DENEGADO: La planilla debe estar en 'Cualquier persona con el enlace puede leer'.");
+    if (csvText.includes('<!DOCTYPE html>')) {
+      console.warn("Google Sheets returned HTML instead of CSV. Ensure the sheet is public or the URL is correct.");
+      return null;
     }
 
     const rows = parseCSV(csvText);
-    
-    if (rows.length < 2) {
-      alert("⚠️ Sincronización exitosa, pero la planilla parece no tener datos de reservas.");
-      return [];
-    }
+    if (rows.length < 2) return [];
 
-    const headers = rows[0].map(h => h.toLowerCase().trim());
+    const headers = rows[0].map(h => h.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
     const dataRows = rows.slice(1);
 
-    const parsed = dataRows.map((row, index): Reservation | null => {
+    return dataRows.map((row, index): Reservation => {
       const getVal = (possibleHeaders: string[]) => {
         for (const h of possibleHeaders) {
-          const idx = headers.indexOf(h.toLowerCase());
-          if (idx !== -1 && row[idx] !== undefined) return row[idx].replace(/^"(.*)"$/, '$1').trim();
+          const cleanH = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const idx = headers.indexOf(cleanH);
+          if (idx !== -1 && row[idx]) return row[idx].replace(/^"(.*)"$/, '$1').trim();
         }
         return '';
       };
 
-      const startStr = getVal(['salida', 'entrega', 'inicio', 'desde', 'fecha_inicio', 'fecha_salida', 'fecha']);
-      const endStr = getVal(['retorno', 'devolución', 'regreso', 'fin', 'hasta', 'fecha_fin', 'fecha_retorno']);
-      
-      if (!startStr) return null;
-
-      const rawMonto = getVal(['total', 'monto', 'brl', 'precio', 'valor', 'monto_total']);
-      // Limpieza de caracteres no numéricos (como R$ o puntos de miles)
-      const cleanMonto = parseFloat(rawMonto.replace(/[^0-9]/g, '')) || 0;
+      const includeInCalStr = getVal(['includeInCalendar', 'calendar', 'visible', 'calendario']).toLowerCase();
+      // Default to true unless explicitly false or no
+      const includeInCalendar = includeInCalStr === '' || includeInCalStr === 'true' || includeInCalStr === '1' || includeInCalStr === 'si' || includeInCalStr === 'yes';
 
       return {
-        id: getVal(['id', 'reserva_id', 'nro']) || `CLOUD-${Date.now()}-${index}`,
-        cliente: getVal(['cliente', 'nombre', 'arrendatario']) || 'Sin Nombre',
-        ci: getVal(['ci', 'documento', 'rg']) || 'N/A',
-        celular: getVal(['celular', 'whatsapp', 'contacto']) || 'N/A',
-        auto: getVal(['auto', 'vehículo', 'unidad']).toLowerCase(),
-        inicio: startStr,
-        fin: endStr || startStr,
-        total: cleanMonto,
-        status: 'Confirmed',
+        id: getVal(['id', 'reserva', 'uuid']) || `SHEET-${index}-${Date.now()}`,
+        cliente: getVal(['cliente', 'nombre', 'name']) || 'Cliente VIP',
+        ci: getVal(['ci', 'documento', 'id']) || 'N/A',
+        celular: getVal(['celular', 'whatsapp', 'phone']) || 'N/A',
+        auto: getVal(['auto', 'vehculo', 'vehicle']).toLowerCase() || 'unidad',
+        inicio: getVal(['inicio', 'desde', 'start', 'fecha']),
+        fin: getVal(['fin', 'hasta', 'end']) || getVal(['inicio', 'desde', 'fecha']),
+        total: parseFloat(getVal(['total', 'monto', 'price']).replace(/[^0-9.]/g, '')) || 0,
+        status: (getVal(['status', 'estado']) as any) || 'Confirmed',
         admissionStatus: 'Approved',
-        includeInCalendar: true
+        includeInCalendar: includeInCalendar
       };
-    }).filter((r): r is Reservation => r !== null);
-
-    console.log(`[JM-CLOUD] Sincronización exitosa: ${parsed.length} reservas.`);
-    return parsed;
-  } catch (error: any) {
-    console.error("[JM-CLOUD] Error crítico:", error.message);
-    alert(`❌ ERROR DE NUBE: ${error.message}`);
+    }).filter(r => r.inicio);
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.error("Error al leer Google Sheet:", error);
     return null;
   }
 };
 
 export const saveReservationToSheet = async (res: Reservation): Promise<boolean> => {
-  try {
-    if (!GOOGLE_SHEET_WEBAPP_URL || GOOGLE_SHEET_WEBAPP_URL.includes('XXXXX')) {
-      console.warn("URL de Script no configurada.");
-      return false;
-    }
+  if (!GOOGLE_SHEET_WEBAPP_URL || GOOGLE_SHEET_WEBAPP_URL.includes('XXXXX')) {
+    console.warn("URL de WebApp no configurada para guardado persistente.");
+    return false;
+  }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  try {
     await fetch(GOOGLE_SHEET_WEBAPP_URL, {
       method: 'POST',
       mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(res),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
     return true;
   } catch (error) {
+    clearTimeout(timeoutId);
+    console.error("Error al guardar en Google Sheet:", error);
     return false;
   }
 };

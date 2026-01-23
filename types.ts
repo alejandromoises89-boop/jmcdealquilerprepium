@@ -11,12 +11,12 @@ export interface Vehicle {
   transmision?: string;
   combustible?: string;
   asientos?: number;
-  tipo?: 'SUV' | 'Compacto' | 'Familiar';
+  tipo?: 'SUV' | 'Compacto' | 'Familiar' | 'PickUp';
   consumo?: string;
   mantenimientoVence?: string;
   seguroVence?: string;
-  cuotaSeguro?: string;
-  cuotaMantenimiento?: string;
+  cuotaSeguro?: number;
+  cuotaMantenimiento?: number;
 }
 
 export interface InspectionChecklist {

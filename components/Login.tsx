@@ -1,417 +1,195 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { 
-  ShieldCheck, ArrowRight, Lock, Mail, Apple, 
-  AlertCircle, ScanFace, 
-  ChevronLeft, RefreshCw, Eye, EyeOff, UserPlus, Fingerprint, MapPin, Smartphone, CreditCard
+  ShieldCheck, ArrowRight, Lock, Mail, 
+  RefreshCw, Eye, EyeOff, 
+  Fingerprint, ScanFace, ShieldAlert,
+  Check, UserPlus, Sparkles, Smartphone,
+  KeyRound
 } from 'lucide-react';
 
 interface LoginProps {
-  onLogin: (userData: User) => void;
+  onLogin: (userData: User, remember: boolean) => void;
   isLoading: boolean;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, isLoading }) => {
-  const [view, setView] = useState<'login' | 'register' | 'forgot' | 'recovery_sent'>('login');
+const Login: React.FC<LoginProps> = ({ onLogin, isLoading: externalLoading }) => {
+  const [view, setView] = useState<'login' | 'register' | 'forgot' | 'biometric' | 'authenticating'>('login');
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isBiometricActive, setIsBiometricActive] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
-  // Form States
   const [loginData, setLoginData] = useState({ email: '', pass: '' });
-  const [registerData, setRegisterData] = useState({
-    name: '',
-    email: '',
-    ci: '',
-    phone: '',
-    address: '',
-    pass: '',
-    confirmPass: ''
-  });
-  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [registerData, setRegisterData] = useState({ name: '', email: '', pass: '', ci: '' });
 
-  const validateEmail = (email: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  };
-
-  const handleManualLogin = () => {
+  useEffect(() => {
     setError(null);
-    
-    if (!validateEmail(loginData.email)) {
-      setError("Formato de correo electrónico inválido.");
-      return;
-    }
+  }, [view]);
 
-    if (loginData.pass.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres.");
-      return;
-    }
+  const handleManualLogin = async () => {
+    setError(null);
+    const email = loginData.email.toLowerCase().trim();
+    const pin = loginData.pass.trim();
 
-    if (loginData.email.toLowerCase() === 'admin@jmasociados.com' && loginData.pass === 'jm2026') {
+    if (email === 'admin@jmasociados.com' && pin === 'jm2026') {
+      setLoading(true);
+      setView('authenticating');
+      await new Promise(r => setTimeout(r, 2000));
       onLogin({
         name: "Guilherme Fazzi",
-        email: "guilherme@jmasociados.com",
+        email: email,
         picture: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop",
         isAdmin: true
-      });
-    } else if (loginData.email.toLowerCase() === 'cliente@jmasociados.com' && loginData.pass === '123456') {
-      onLogin({
-        name: "Cliente VIP",
-        email: "cliente@vip.com",
-        picture: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop",
-        isAdmin: false
-      });
+      }, rememberMe);
     } else {
-      setError("Credenciales inválidas. Por favor intente de nuevo.");
+      setError("ACCESO DENEGADO: Credenciales no válidas para el protocolo JM.");
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (!validateEmail(registerData.email)) {
-      setError("Formato de correo electrónico inválido.");
-      return;
-    }
-
-    if (registerData.pass.length < 6) {
-      setError("La contraseña debe ser más robusta (mín. 6 carac.).");
-      return;
-    }
-
-    if (registerData.pass !== registerData.confirmPass) {
-      setError("Las contraseñas no coinciden.");
-      return;
-    }
-    
+  const handleBiometricAuth = async () => {
+    setView('biometric');
+    await new Promise(r => setTimeout(r, 2500));
     onLogin({
-      name: registerData.name,
-      email: registerData.email,
-      picture: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop",
+      name: "Socio Platinum",
+      email: "socio@jmasociados.com",
+      picture: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop",
       isAdmin: false
-    });
-  };
-
-  const handleRecovery = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validateEmail(recoveryEmail)) {
-      setError("Email inválido para recuperación.");
-      return;
-    }
-    setView('recovery_sent');
-  };
-
-  const handleBiometric = () => {
-    setIsBiometricActive(true);
-    setTimeout(() => {
-      setIsBiometricActive(false);
-      onLogin({
-        name: "Guilherme Fazzi",
-        email: "guilherme@jmasociados.com",
-        picture: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop",
-        isAdmin: true
-      });
-    }, 2500);
-  };
-
-  const handleGoogleLogin = () => {
-    onLogin({
-      name: "Usuario Google VIP",
-      email: "google@user.com",
-      picture: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop",
-      isAdmin: false
-    });
+    }, true);
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-4 py-12 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-white px-4 py-8 relative overflow-hidden font-sans">
+      {/* Premium Background Elements */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-[-20%] right-[-10%] w-[1200px] h-[1200px] bg-bordeaux-950 rounded-full blur-[200px] opacity-60 animate-pulse-slow"></div>
-        <div className="absolute bottom-[-15%] left-[-10%] w-[900px] h-[900px] bg-gold/5 rounded-full blur-[150px] opacity-30 animate-pulse-slow"></div>
+        <div className="absolute top-[-10%] right-[-5%] w-[600px] h-[600px] bg-bordeaux-50 rounded-full blur-[100px] opacity-40"></div>
+        <div className="absolute bottom-[-10%] left-[-10%] w-[700px] h-[700px] bg-gray-50 rounded-full blur-[120px]"></div>
       </div>
 
-      <div className="relative w-full max-w-2xl">
-        <div className="flex justify-center mb-10 md:mb-16 animate-float">
-          <div className="bg-white p-6 md:p-8 rounded-[3.5rem] shadow-[0_40px_100px_-20px_rgba(128,0,0,0.5)] border border-bordeaux-100 relative group overflow-hidden">
-             <div className="absolute inset-0 gold-shine opacity-10"></div>
-             <img src="https://i.ibb.co/PzsvxYrM/JM-Asociados-Logotipo-02.png" alt="Logo" className="h-20 md:h-28 w-auto relative z-10" />
+      <div className="relative w-full max-w-lg z-10 space-y-8 animate-fadeIn">
+        <div className="flex flex-col items-center">
+          <div className="bg-white p-6 rounded-[2.5rem] shadow-2xl border border-gray-100 mb-4 hover:scale-105 transition-transform duration-500">
+            <img src="https://i.ibb.co/PzsvxYrM/JM-Asociados-Logotipo-02.png" alt="JM Logo" className="h-16 md:h-20 w-auto object-contain" />
           </div>
+          <p className="text-bordeaux-800 text-[10px] font-black uppercase tracking-[0.6em]">Security & Luxury Protocol</p>
         </div>
 
-        <div className="bg-white/95 backdrop-blur-[60px] rounded-[3.5rem] md:rounded-[5rem] p-8 md:p-14 lg:p-20 shadow-[0_120px_250px_-60px_rgba(0,0,0,0.7)] border border-white/20 animate-slideUp overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-2 gold-shine opacity-40"></div>
-
-          {view === 'login' && (
-            <div className="space-y-10 animate-fadeIn">
-              <div className="text-center space-y-4">
-                <div className="inline-flex items-center gap-3 px-6 py-2 bg-bordeaux-50 rounded-full text-bordeaux-900 text-[10px] font-black uppercase tracking-[0.5em]">
-                  <ShieldCheck size={14} className="text-gold" /> Cloud Security Elite
-                </div>
-                <h1 className="text-3xl md:text-5xl font-serif font-bold text-bordeaux-950 tracking-tight">Acceso Privado</h1>
+        <div className="bg-white/80 backdrop-blur-xl rounded-[3.5rem] p-8 md:p-12 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.08)] border border-white/50 relative">
+          
+          {view === 'authenticating' ? (
+            <div className="py-20 flex flex-col items-center space-y-6 text-center">
+               <RefreshCw className="text-bordeaux-800 animate-spin" size={60} />
+               <p className="text-xl font-serif font-bold text-bordeaux-950 italic">Validando Identidad...</p>
+            </div>
+          ) : view === 'biometric' ? (
+            <div className="py-16 flex flex-col items-center space-y-10">
+               <div className="w-48 h-48 bg-bordeaux-50 rounded-[3rem] flex items-center justify-center text-bordeaux-800 relative overflow-hidden shadow-inner">
+                  <div className="absolute inset-0 bg-gradient-to-b from-transparent via-bordeaux-500/20 to-transparent animate-scan"></div>
+                  <ScanFace size={90} strokeWidth={1} className="animate-pulse" />
+               </div>
+               <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em]">Iniciando Apple FaceID</p>
+            </div>
+          ) : view === 'login' ? (
+            <div className="space-y-8">
+              <div className="text-center space-y-2">
+                <h1 className="text-3xl font-serif font-bold text-bordeaux-950 italic">Acceso <span className="text-gold">Socio</span></h1>
+                <p className="text-[10px] font-black uppercase text-gray-300 tracking-widest">Ingrese al Terminal de Gestión</p>
               </div>
 
-              <div className="space-y-6">
+              {/* Social Logins */}
+              <div className="grid grid-cols-2 gap-4">
+                 <button onClick={handleBiometricAuth} className="flex items-center justify-center gap-3 bg-bordeaux-950 text-white py-4 rounded-2xl hover:bg-black transition-all shadow-lg active:scale-95">
+                    <Fingerprint size={20} className="text-gold" />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Biometría</span>
+                 </button>
+                 <button className="flex items-center justify-center gap-3 bg-gray-50 border border-gray-100 py-4 rounded-2xl hover:bg-white transition-all shadow-sm active:scale-95">
+                    <Smartphone size={20} className="text-bordeaux-800" />
+                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Apple ID</span>
+                 </button>
+              </div>
+
+              <div className="space-y-4">
                 <div className="relative group">
-                  <Mail className="absolute left-8 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-bordeaux-800 transition-all" size={22} />
-                  <input 
-                    type="email" 
-                    value={loginData.email} 
-                    onChange={(e) => setLoginData({...loginData, email: e.target.value})}
-                    placeholder="Correo Electrónico" 
-                    className="w-full bg-gray-50 border-0 rounded-[2.5rem] pl-20 pr-8 py-7 font-bold outline-none focus:ring-4 focus:ring-bordeaux-50 transition-all shadow-inner" 
-                  />
+                   <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-bordeaux-800 transition-colors" size={18} />
+                   <input 
+                      type="email" 
+                      placeholder="Identificador de Socio" 
+                      value={loginData.email} 
+                      onChange={(e) => setLoginData({...loginData, email: e.target.value})} 
+                      className="w-full bg-gray-50/50 border-0 rounded-[2rem] pl-16 pr-6 py-5 font-bold text-sm outline-none focus:ring-4 focus:ring-bordeaux-50 transition-all shadow-inner" 
+                   />
                 </div>
-                
                 <div className="relative group">
-                  <Lock className="absolute left-8 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-bordeaux-800 transition-all" size={22} />
+                  <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-bordeaux-800 transition-colors" size={18} />
                   <input 
                     type={showPass ? "text" : "password"} 
+                    placeholder="PIN Maestro" 
                     value={loginData.pass} 
-                    onChange={(e) => setLoginData({...loginData, pass: e.target.value})}
-                    placeholder="Contraseña" 
-                    className="w-full bg-gray-50 border-0 rounded-[2.5rem] pl-20 pr-16 py-7 font-bold outline-none focus:ring-4 focus:ring-bordeaux-50 transition-all shadow-inner" 
+                    onChange={(e) => setLoginData({...loginData, pass: e.target.value})} 
+                    className="w-full bg-gray-50/50 border-0 rounded-[2rem] pl-16 pr-20 py-5 font-bold text-sm outline-none focus:ring-4 focus:ring-bordeaux-50 transition-all shadow-inner" 
                   />
-                  <button onClick={() => setShowPass(!showPass)} className="absolute right-8 top-1/2 -translate-y-1/2 text-gray-300 hover:text-bordeaux-800 transition-colors">
-                    {showPass ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
-
-                <button 
-                  onClick={() => setView('forgot')}
-                  className="text-[10px] font-black uppercase text-gray-400 tracking-widest hover:text-bordeaux-800 transition-colors ml-4"
-                >
-                  ¿Olvidó su contraseña?
-                </button>
-              </div>
-
-              {error && (
-                <div className="flex items-center gap-5 bg-red-50 text-red-600 p-6 rounded-[2.5rem] animate-shake border border-red-100">
-                  <AlertCircle size={24} />
-                  <span className="text-[10px] font-black uppercase tracking-widest">{error}</span>
-                </div>
-              )}
-
-              <div className="space-y-6">
-                <button onClick={handleManualLogin} disabled={isLoading} className="w-full bordeaux-gradient text-white py-7 rounded-[3rem] font-black text-xs uppercase tracking-[0.8em] shadow-2xl hover:scale-[1.03] active:scale-95 transition-all flex items-center justify-center gap-4 relative group overflow-hidden">
-                  <div className="absolute inset-0 gold-shine opacity-0 group-hover:opacity-20 transition-opacity"></div>
-                  {isLoading ? <RefreshCw className="animate-spin" /> : <>Ingresar <ArrowRight size={20} /></>}
-                </button>
-
-                <div className="relative flex items-center gap-6 py-4">
-                  <div className="flex-1 h-px bg-gray-100"></div>
-                  <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">O</span>
-                  <div className="flex-1 h-px bg-gray-100"></div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <button onClick={handleGoogleLogin} className="flex items-center justify-center gap-4 p-5 bg-white border border-gray-100 rounded-[2.5rem] hover:shadow-xl transition-all font-bold text-sm text-gray-700">
-                    <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="G" /> Google
-                  </button>
-                  <button onClick={handleBiometric} className="flex items-center justify-center gap-4 p-5 bg-white border border-gray-100 rounded-[2.5rem] hover:shadow-xl transition-all font-bold text-sm text-gray-700">
-                    <Fingerprint size={20} className="text-bordeaux-800" /> Biometría
-                  </button>
-                </div>
-
-                <div className="text-center pt-6">
-                  <button 
-                    onClick={() => setView('register')}
-                    className="text-[11px] font-black text-gold uppercase tracking-[0.3em] hover:text-bordeaux-800 transition-all flex items-center justify-center gap-3 mx-auto"
-                  >
-                    ¿No tiene cuenta? <span className="bg-bordeaux-50 px-4 py-2 rounded-full border border-bordeaux-100">Registrarse Aquí</span>
+                  <button onClick={() => setShowPass(!showPass)} className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-300 hover:text-bordeaux-800 transition-all">
+                    {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
               </div>
+
+              <div className="flex items-center justify-between px-2">
+                 <label className="flex items-center gap-2 cursor-pointer">
+                    <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${rememberMe ? 'bg-bordeaux-800 border-bordeaux-800' : 'border-gray-200'}`}>
+                       {rememberMe && <Check size={12} className="text-white" strokeWidth={4} />}
+                    </div>
+                    <input type="checkbox" className="hidden" checked={rememberMe} onChange={() => setRememberMe(!rememberMe)} />
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Recordar</span>
+                 </label>
+                 <button onClick={() => setView('forgot')} className="text-[10px] font-black text-bordeaux-800 uppercase tracking-widest">¿Olvidó PIN?</button>
+              </div>
+
+              {error && <p className="text-[10px] text-center font-bold text-red-500 uppercase tracking-widest animate-pulse">{error}</p>}
+
+              <button onClick={handleManualLogin} className="w-full bordeaux-gradient text-white py-6 rounded-[2rem] font-black text-[11px] uppercase tracking-[0.6em] shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3">
+                 Autenticar <ArrowRight size={18} />
+              </button>
+              
+              <button onClick={() => setView('register')} className="w-full text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-bordeaux-800 transition-colors">
+                ¿No es socio? <span className="text-bordeaux-800">Registrar Nuevo Perfil</span>
+              </button>
             </div>
-          )}
-
-          {view === 'register' && (
-            <div className="space-y-8 animate-fadeIn">
-               <button onClick={() => setView('login')} className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-bordeaux-800 transition-all">
-                  <ChevronLeft size={16} /> Volver al Login
-               </button>
-               
+          ) : view === 'register' ? (
+            <div className="space-y-6">
+               <div className="text-center space-y-2">
+                <h1 className="text-2xl font-serif font-bold text-bordeaux-950 italic">Registro <span className="text-gold">Platinum</span></h1>
+                <p className="text-[10px] font-black uppercase text-gray-300 tracking-widest">Cree su perfil corporativo</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                 <input type="text" placeholder="Nombre Completo" className="w-full bg-gray-50 rounded-2xl px-6 py-4 text-sm font-bold border-0 shadow-inner" />
+                 <input type="email" placeholder="Email Corporativo" className="w-full bg-gray-50 rounded-2xl px-6 py-4 text-sm font-bold border-0 shadow-inner" />
+                 <input type="text" placeholder="Cédula / RG" className="w-full bg-gray-50 rounded-2xl px-6 py-4 text-sm font-bold border-0 shadow-inner" />
+                 <input type="password" placeholder="Definir PIN Maestro" className="w-full bg-gray-50 rounded-2xl px-6 py-4 text-sm font-bold border-0 shadow-inner" />
+              </div>
+              <button onClick={() => setView('login')} className="w-full bordeaux-gradient text-white py-6 rounded-[2rem] font-black text-[10px] uppercase tracking-[0.4em] shadow-xl">Registrar y Validar</button>
+              <button onClick={() => setView('login')} className="w-full text-[10px] font-black text-gray-400 uppercase tracking-widest">Volver al Terminal</button>
+            </div>
+          ) : (
+            <div className="py-12 text-center space-y-8 animate-fadeIn">
+               <div className="w-20 h-20 bg-bordeaux-50 rounded-[2.5rem] flex items-center justify-center mx-auto text-bordeaux-800">
+                  {/* Fixed missing KeyRound icon import from lucide-react */}
+                  <KeyRound size={40} strokeWidth={1} />
+               </div>
                <div className="space-y-2">
-                  <h2 className="text-3xl font-serif font-bold text-bordeaux-950">Registro de Cliente VIP</h2>
-                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Suministre sus datos para validación de perfil</p>
+                  <h2 className="text-2xl font-serif font-bold text-bordeaux-950 italic">Recuperación</h2>
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-8">Solicite un nuevo PIN al soporte JM Asociados</p>
                </div>
-
-               <form onSubmit={handleRegister} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="relative group">
-                       <UserPlus className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                       <input 
-                        required
-                        type="text" 
-                        placeholder="Nombre Completo" 
-                        value={registerData.name}
-                        onChange={(e) => setRegisterData({...registerData, name: e.target.value})}
-                        className="w-full bg-gray-50 border-0 rounded-2xl pl-16 pr-6 py-5 font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux-800" 
-                       />
-                    </div>
-                    <div className="relative group">
-                       <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                       <input 
-                        required
-                        type="email" 
-                        placeholder="Correo Electrónico" 
-                        value={registerData.email}
-                        onChange={(e) => setRegisterData({...registerData, email: e.target.value})}
-                        className="w-full bg-gray-50 border-0 rounded-2xl pl-16 pr-6 py-5 font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux-800" 
-                       />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="relative group">
-                       <CreditCard className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                       <input 
-                        required
-                        type="text" 
-                        placeholder="Cédula / RG / Pasaporte" 
-                        value={registerData.ci}
-                        onChange={(e) => setRegisterData({...registerData, ci: e.target.value})}
-                        className="w-full bg-gray-50 border-0 rounded-2xl pl-16 pr-6 py-5 font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux-800" 
-                       />
-                    </div>
-                    <div className="relative group">
-                       <Smartphone className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                       <input 
-                        required
-                        type="tel" 
-                        placeholder="WhatsApp / Teléfono" 
-                        value={registerData.phone}
-                        onChange={(e) => setRegisterData({...registerData, phone: e.target.value})}
-                        className="w-full bg-gray-50 border-0 rounded-2xl pl-16 pr-6 py-5 font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux-800" 
-                       />
-                    </div>
-                  </div>
-
-                  <div className="relative group">
-                    <MapPin className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                    <input 
-                      required
-                      type="text" 
-                      placeholder="Dirección Residencial" 
-                      value={registerData.address}
-                      onChange={(e) => setRegisterData({...registerData, address: e.target.value})}
-                      className="w-full bg-gray-50 border-0 rounded-2xl pl-16 pr-6 py-5 font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux-800" 
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <input 
-                      required
-                      type="password" 
-                      placeholder="Contraseña" 
-                      value={registerData.pass}
-                      onChange={(e) => setRegisterData({...registerData, pass: e.target.value})}
-                      className="w-full bg-gray-50 border-0 rounded-2xl px-6 py-5 font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux-800" 
-                    />
-                    <input 
-                      required
-                      type="password" 
-                      placeholder="Confirmar Contraseña" 
-                      value={registerData.confirmPass}
-                      onChange={(e) => setRegisterData({...registerData, confirmPass: e.target.value})}
-                      className="w-full bg-gray-50 border-0 rounded-2xl px-6 py-5 font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux-800" 
-                    />
-                  </div>
-
-                  {error && <p className="text-red-600 text-[10px] font-black uppercase text-center">{error}</p>}
-
-                  <button type="submit" className="w-full bordeaux-gradient text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.5em] shadow-xl hover:scale-[1.02] active:scale-95 transition-all">
-                    Crear Cuenta VIP
-                  </button>
-               </form>
-            </div>
-          )}
-
-          {view === 'forgot' && (
-            <div className="space-y-10 animate-fadeIn text-center">
-               <button onClick={() => setView('login')} className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-bordeaux-800 transition-all mx-auto">
-                  <ChevronLeft size={16} /> Volver al Login
-               </button>
-
-               <div className="w-20 h-20 bg-gold/10 rounded-full flex items-center justify-center mx-auto text-gold mb-6 shadow-inner">
-                  <Lock size={32} />
-               </div>
-
-               <div className="space-y-3">
-                  <h2 className="text-3xl font-serif font-bold text-bordeaux-950">Recuperar Cuenta</h2>
-                  <p className="text-sm text-gray-500 font-medium">Le enviaremos un código de seguridad para reestablecer su acceso premium.</p>
-               </div>
-
-               <form onSubmit={handleRecovery} className="space-y-6">
-                  <div className="relative group max-w-md mx-auto">
-                    <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={20} />
-                    <input 
-                      required
-                      type="email" 
-                      placeholder="Su Correo Registrado" 
-                      value={recoveryEmail}
-                      onChange={(e) => setRecoveryEmail(e.target.value)}
-                      className="w-full bg-gray-50 border-0 rounded-3xl pl-16 pr-6 py-6 font-bold outline-none focus:ring-4 focus:ring-bordeaux-50" 
-                    />
-                  </div>
-
-                  <button type="submit" className="w-full bordeaux-gradient text-white py-6 rounded-3xl font-black text-xs uppercase tracking-[0.5em] shadow-xl hover:scale-[1.02] active:scale-95 transition-all max-w-md mx-auto flex items-center justify-center gap-4">
-                    Enviar Código <ArrowRight size={18} />
-                  </button>
-               </form>
-            </div>
-          )}
-
-          {view === 'recovery_sent' && (
-            <div className="space-y-10 animate-scaleIn text-center py-10">
-               <div className="w-24 h-24 bg-green-50 rounded-full flex items-center justify-center mx-auto text-green-600 mb-6 shadow-xl border-4 border-white">
-                  <ShieldCheck size={48} />
-               </div>
-               <div className="space-y-4">
-                  <h2 className="text-3xl font-serif font-bold text-bordeaux-950">Correo Enviado</h2>
-                  <p className="text-sm text-gray-500 font-medium leading-relaxed max-w-xs mx-auto">
-                    Hemos enviado instrucciones detalladas a <b>{recoveryEmail}</b> para que pueda recuperar su clave de forma segura.
-                  </p>
-               </div>
-               <button 
-                onClick={() => setView('login')}
-                className="px-10 py-5 bg-bordeaux-950 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gold transition-all"
-               >
-                 Entendido, Ir al Login
-               </button>
+               <button onClick={() => setView('login')} className="text-[10px] font-black text-bordeaux-800 uppercase tracking-widest border-b-2 border-bordeaux-100 pb-1">Regresar</button>
             </div>
           )}
         </div>
       </div>
 
-      {isBiometricActive && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/85 backdrop-blur-xl animate-fadeIn">
-          <div className="flex flex-col items-center gap-12 text-center p-10">
-            <div className="relative">
-               <ScanFace size={140} className="text-white animate-pulse" />
-               <div className="absolute inset-0 border-4 border-gold/30 rounded-full animate-ping"></div>
-               <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-[140px] h-1 bg-gold/50 absolute animate-scan-line"></div>
-               </div>
-            </div>
-            <div className="space-y-4">
-               <p className="text-white font-black uppercase tracking-[1em] text-sm animate-pulse">Escaneando...</p>
-               <p className="text-gold/60 text-[10px] font-bold uppercase tracking-[0.4em]">Protocolo de Identidad JM Asociados</p>
-            </div>
-          </div>
-        </div>
-      )}
-
       <style>{`
-        @keyframes scan-line {
-          0% { top: 0; }
-          50% { top: 100%; }
-          100% { top: 0; }
-        }
-        .animate-scan-line {
-          animation: scan-line 2s infinite linear;
-        }
+        @keyframes scan { from { transform: translateY(-100%); } to { transform: translateY(100%); } }
+        .animate-scan { animation: scan 3s linear infinite; }
       `}</style>
     </div>
   );
