@@ -3,58 +3,114 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>JM Alquiler de Vehículos | Premium Fleet</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
                         bordeaux: {
-                            50: '#fdf2f2',
-                            100: '#fbe4e4',
-                            200: '#f7cdcd',
-                            300: '#f1a9a9',
-                            400: '#e57777',
-                            500: '#d14d4d',
-                            600: '#b43535',
-                            700: '#972929',
+                            50: '#fef2f2',
+                            100: '#fde1e1',
+                            200: '#f9c7c7',
+                            300: '#f39f9f',
+                            400: '#e96b6b',
+                            500: '#d93d3d',
+                            600: '#c12d2d',
+                            700: '#a12323',
                             800: '#800000',
-                            900: '#6a1d1d',
-                            950: '#3a0b0b',
+                            900: '#6d0606',
+                            950: '#0a0101',
                         },
-                        gold: '#D4AF37',
+                        gold: {
+                            DEFAULT: '#D4AF37',
+                            50: '#fbf8ef',
+                            100: '#f5edd7',
+                            200: '#ebdbaf',
+                            300: '#dec27f',
+                            400: '#d0a44f',
+                            500: '#D4AF37',
+                            600: '#b88d2b',
+                            700: '#996f25',
+                            800: '#7d5a23',
+                            900: '#674a20',
+                        },
+                        dark: {
+                            base: '#0a0101',
+                            card: '#120404',
+                            elevated: '#1a0606'
+                        }
                     },
                     fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        serif: ['Playfair Display', 'serif'],
+                        sans: ['"Archivo"', 'sans-serif'],
                     },
                 }
             }
         }
     </script>
     <style>
-        body { background-color: #ffffff; color: #1a1a1a; scroll-behavior: smooth; overflow-x: hidden; }
-        .glass-morphism { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); border: 1px solid rgba(128, 0, 0, 0.05); }
-        .bordeaux-gradient { background: linear-gradient(135deg, #800000 0%, #3a0b0b 100%); }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .animate-fadeIn { animation: fadeIn 0.5s ease-out; }
+        html { font-size: 12px; }
+        @media (max-width: 640px) { html { font-size: 11px; } }
         
-        /* Custom scrollbar for premium feel */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        body { 
+            transition: background-color 0.4s ease; 
+            scroll-behavior: smooth;
+            -webkit-font-smoothing: antialiased;
+            position: relative;
+        }
+
+        /* Marca de Agua Premium */
+        .watermark-bg {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80vw;
+            height: 80vh;
+            background-image: url('https://i.ibb.co/PzsvxYrM/JM-Asociados-Logotipo-02.png');
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: contain;
+            opacity: 0.03;
+            pointer-events: none;
+            z-index: -1;
+        }
+        .dark .watermark-bg {
+            opacity: 0.05;
+            filter: brightness(0) invert(1);
+        }
+
+        .font-robust { font-weight: 900; text-transform: uppercase; letter-spacing: -0.02em; }
+        .font-speed { font-style: italic; }
+
+        .bordeaux-gradient { background: linear-gradient(135deg, #800000 0%, #3a0b0b 100%); }
+        
+        @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .animate-slideUp { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        .dark ::-webkit-scrollbar-track { background: #0a0101; }
         ::-webkit-scrollbar-thumb { background: #800000; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #3a0b0b; }
+        .dark ::-webkit-scrollbar-thumb { background: #D4AF37; }
+
+        .compact-table th { font-weight: 900; text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.05em; }
+        .compact-table td { font-size: 0.8rem; vertical-align: middle; padding: 0.5rem 1rem; }
+        
+        .calendar-day-occupied { background-color: #fce7e7 !important; color: #b91c1c !important; font-weight: 800; }
+        .dark .calendar-day-occupied { background-color: #3a0b0b !important; color: #ef4444 !important; }
     </style>
 <script type="importmap">
 {
   "imports": {
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
     "recharts": "https://esm.sh/recharts@^3.7.0",
     "vite": "https://esm.sh/vite@^7.3.1",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
@@ -62,7 +118,9 @@
 }
 </script>
 </head>
-<body>
+<body class="bg-gray-50 text-gray-950 dark:bg-dark-base dark:text-gray-100 overflow-x-hidden">
+    <!-- Elemento de Marca de Agua -->
+    <div class="watermark-bg"></div>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
 </body>

@@ -1,3 +1,4 @@
+
 import { Vehicle } from './types';
 
 export const INITIAL_FLOTA: Vehicle[] = [
@@ -9,23 +10,13 @@ export const INITIAL_FLOTA: Vehicle[] = [
     estado: "Disponible",
     placa: "AAVP719",
     color: "Blanco",
-    specs: [
-      "Motor: 1.3L VVTi - Eficiencia Japonesa",
-      "Transmisión: Automática CVT Inteligente",
-      "Consumo: 5.5L/100km (Eco Mode)",
-      "Seguridad: Doble Airbag + ABS",
-      "Confort: Aire Acondicionado High-Power",
-      "Multimedia: Radio Bluetooth + Hands-free"
-    ],
+    specs: ["1.3L VVTi", "Automático CVT", "Nafta", "ABS + Airbags"],
     transmision: "Automático",
     combustible: "Nafta",
     asientos: 5,
     tipo: 'Compacto',
-    consumo: "5.5L/100km",
-    mantenimientoVence: "20/06/2026",
-    seguroVence: "10/11/2026",
-    cuotaSeguro: 280000,
-    cuotaMantenimiento: 450000
+    kilometrajeActual: 85000,
+    mantenimientoKM: 90000
   },
   {
     id: '3',
@@ -35,49 +26,25 @@ export const INITIAL_FLOTA: Vehicle[] = [
     estado: "Disponible",
     placa: "AAOR725",
     color: "Negro",
-    specs: [
-      "Motor: 1.3L VVTi - Edición Dark",
-      "Transmisión: Automática Secuencial",
-      "Consumo: 5.5L/100km",
-      "Interior: Tapizado Premium Oscuro",
-      "Tecnología: Cámara de Retroceso Activa",
-      "Extras: Llantas Deportivas Originales"
-    ],
+    specs: ["1.3L Dark Edition", "Nafta", "Eco Mode", "Llantas Deportivas"],
     transmision: "Automático",
     combustible: "Nafta",
     asientos: 5,
-    tipo: 'Compacto',
-    consumo: "5.5L/100km",
-    mantenimientoVence: "05/04/2026",
-    seguroVence: "01/10/2026",
-    cuotaSeguro: 280000,
-    cuotaMantenimiento: 450000
+    tipo: 'Compacto'
   },
   {
     id: '5',
     nombre: "Toyota Wish Gris",
     precio: 230.0,
-    img: "https://i.ibb.co/KYcHVmZ/Toyota-Wish-2009.jpg",
+    img: "https://i.ibb.co/d0bCm8Nj/WISH-2009.png", 
     estado: "Disponible",
     placa: "AAVP924",
     color: "Gris Plata",
-    specs: [
-      "Motor: 1.8L Valvematic - Potencia Familiar",
-      "Transmisión: Automática Inteligente",
-      "Capacidad: 7 Pasajeros Reales",
-      "Combustible: Nafta Super",
-      "Seguridad: 8 Airbags + Control de Estabilidad",
-      "Confort: Climatizador Bi-zona para 3 filas"
-    ],
+    specs: ["1.8L Valvematic", "7 Pasajeros", "Nafta"],
     transmision: "Automático",
     combustible: "Nafta",
     asientos: 7,
-    tipo: 'Familiar',
-    consumo: "8.5L/100km",
-    mantenimientoVence: "01/01/2026",
-    seguroVence: "01/01/2027",
-    cuotaSeguro: 320000,
-    cuotaMantenimiento: 600000
+    tipo: 'Familiar'
   },
   {
     id: '4',
@@ -87,23 +54,11 @@ export const INITIAL_FLOTA: Vehicle[] = [
     estado: "Disponible",
     placa: "AAUG465",
     color: "Gris",
-    specs: [
-      "Motor: 2.0L Dual VVTi - Alto Torque",
-      "Puertas: Doble Lateral Eléctrica",
-      "Capacidad: 7-8 Pasajeros Premium",
-      "Interior: Butacas Capitán Modular",
-      "Tecnología: Pantalla Multimedia Trasera",
-      "Ideal: Viajes Largos y Grupos VIP"
-    ],
+    specs: ["2.0L Dual VVTi", "Puertas Eléctricas", "Nafta", "8 Pasajeros"],
     transmision: "Automático",
     combustible: "Nafta",
     asientos: 7,
-    tipo: 'Familiar',
-    consumo: "10.5L/100km",
-    mantenimientoVence: "10/08/2026",
-    seguroVence: "22/09/2026",
-    cuotaSeguro: 450000,
-    cuotaMantenimiento: 900000
+    tipo: 'Familiar'
   },
   {
     id: '1',
@@ -113,28 +68,107 @@ export const INITIAL_FLOTA: Vehicle[] = [
     estado: "Disponible",
     placa: "AAVI502",
     color: "Blanco",
-    specs: [
-      "Motor: 2.0 Turbo Diesel CRDi",
-      "Transmisión: Automática H-Matic",
-      "Interior: Cuero Premium Microperforado",
-      "Techo: Panorámico Solar de Apertura Total",
-      "Seguridad: Sensores 360° + Frenado Autónomo",
-      "Tecnología: Apple CarPlay & Android Auto Wireless"
-    ],
+    specs: ["2.0 Turbo Diesel", "Techo Panorámico", "Diesel", "Apple CarPlay"],
     transmision: "Automático",
     combustible: "Diesel",
     asientos: 5,
-    tipo: 'SUV',
-    consumo: "7.8L/100km",
-    mantenimientoVence: "15/05/2026",
-    seguroVence: "12/12/2026",
-    cuotaSeguro: 350000,
-    cuotaMantenimiento: 850000
+    tipo: 'SUV'
   }
 ];
 
 export const GOOGLE_SHEET_ID = "1cGvNGAtCh84Gvs3-x7n0I2W-rqbG3W2z";
-export const GOOGLE_SHEET_WEBAPP_URL = "https://docs.google.com/spreadsheets/d/1cGvNGAtCh84Gvs3-x7n0I2W-rqbG3W2z/edit?usp=drivesdk&ouid=105620396881392132951&rtpof=true&sd=true"; 
+export const GOOGLE_SHEET_WEBAPP_URL = "https://docs.google.com/spreadsheets/d/1cGvNGAtCh84Gvs3-x7n0I2W-rqbG3W2z/edit?usp=drivesdk"; 
 export const GOOGLE_SHEET_RESERVATIONS_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Reservas`;
-export const GOOGLE_SHEET_EMBED_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit?usp=sharing`;
 export const FILTER_DATE_START = new Date('2026-01-01');
+
+export type Language = 'es' | 'pt' | 'en';
+
+export const CONTRACT_CLAUSES = [
+  "OBJETO: El Arrendador otorga en alquiler el vehículo descrito al Arrendatario.",
+  "AUTORIZACIÓN: Se autoriza la conducción en Paraguay y todo el MERCOSUR.",
+  "HORARIOS: El retiro y entrega debe realizarse entre las 08:00 y las 17:00 hs.",
+  "MULTAS: El retraso mayor a 1 hora sin aviso previo conlleva multas de media diaria.",
+  "TOLERANCIA: Máxima de 1 hora. Pasado el tiempo, se cobrará recargo por hora extra.",
+  "ESTADO: El vehículo se entrega limpio y con fluidos verificados mediante video.",
+  "USO: El vehículo será utilizado exclusivamente para fines lícitos y personales.",
+  "KM: Límite de 200 km por día. Excedente a Gs. 100.000 por cada tramo.",
+  "SEGURO: Cobertura de Responsabilidad Civil y Accidentes por Mapfre S.A.",
+  "DEPÓSITO: Gs. 5.000.000 de garantía en caso de siniestro por negligencia.",
+  "RESPONSABILIDAD: El Arrendatario es responsable civil y penal de lo ocurrido dentro del vehículo.",
+  "JURISDICCIÓN: Para cualquier disputa, se someten a los tribunales de Alto Paraná."
+];
+
+export const TRANSLATIONS: Record<Language, any> = {
+  es: {
+    rent: "Alquilar",
+    next: "Siguiente",
+    confirm: "Finalizar Reserva",
+    copy: "Copiar",
+    copied: "Copiado!",
+    fleet: "Flota VIP",
+    office: "Sede CDE",
+    security: "Seguridad",
+    management: "Gestión",
+    available: "Disponible",
+    booked: "Bloqueado",
+    details: "Detalles",
+    agenda: "Agenda",
+    price: "Precio",
+    perDay: "por día",
+    steps: ["Disponibilidad", "Socio & Documentos", "Contrato Digital", "Pago & Activación", "Ticket JM", "Validación"],
+    payData: {
+      pix: "24510861818",
+      bank: "ueno Bank / Santander",
+      acc: "1008110",
+      holder: "Marina Baez"
+    }
+  },
+  pt: {
+    rent: "Alugar",
+    next: "Próximo",
+    confirm: "Finalizar Reserva",
+    copy: "Copiar",
+    copied: "Copiado!",
+    fleet: "Frota VIP",
+    office: "Sede CDE",
+    security: "Segurança",
+    management: "Gestão",
+    available: "Disponível",
+    booked: "Bloqueado",
+    details: "Detalhes",
+    agenda: "Agenda",
+    price: "Preço",
+    perDay: "por día",
+    steps: ["Disponibilidade", "Sócio & Docs", "Contrato Digital", "Pagamento", "Ticket JM", "Validação"],
+    payData: {
+      pix: "24510861818",
+      bank: "ueno Bank / Santander",
+      acc: "1008110",
+      holder: "Marina Baez"
+    }
+  },
+  en: {
+    rent: "Rent",
+    next: "Next",
+    confirm: "Complete Booking",
+    copy: "Copy",
+    copied: "Copied!",
+    fleet: "VIP Fleet",
+    office: "CDE Office",
+    security: "Security",
+    management: "Management",
+    available: "Available",
+    booked: "Booked",
+    details: "Details",
+    agenda: "Calendar",
+    price: "Price",
+    perDay: "per day",
+    steps: ["Availability", "Partner & Docs", "Digital Contract", "Payment", "JM Ticket", "Validation"],
+    payData: {
+      pix: "24510861818",
+      bank: "ueno Bank / Santander",
+      acc: "1008110",
+      holder: "Marina Baez"
+    }
+  }
+};

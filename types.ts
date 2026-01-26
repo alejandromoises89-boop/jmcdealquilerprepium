@@ -1,4 +1,29 @@
 
+// Fix: Added missing User interface to support authentication components
+export interface User {
+  name: string;
+  email: string;
+  picture?: string;
+  isAdmin: boolean;
+}
+
+export interface ChecklistLog {
+  fecha: string;
+  responsable: string;
+  combustible: '1/8' | '1/4' | '1/2' | '3/4' | 'Full';
+  limpiezaInterior: boolean;
+  limpiezaExterior: boolean;
+  auxilio: {
+    gato: boolean;
+    llaveRueda: boolean;
+    triangulo: boolean;
+    extintor: boolean;
+    auxiliar: boolean;
+  };
+  observaciones: string;
+  firma?: string;
+}
+
 export interface Vehicle {
   id: string;
   nombre: string;
@@ -13,52 +38,49 @@ export interface Vehicle {
   asientos?: number;
   tipo?: 'SUV' | 'Compacto' | 'Familiar' | 'PickUp';
   consumo?: string;
-  mantenimientoVence?: string;
+  mantenimientoVence?: string; 
+  mantenimientoKM?: number; 
   seguroVence?: string;
   cuotaSeguro?: number;
   cuotaMantenimiento?: number;
-}
-
-export interface InspectionChecklist {
-  neumaticos: boolean;
-  fluidos: boolean;
-  limpieza: boolean;
-  combustible: number; // 0-100
-  danos: string;
+  vencimientoCuota?: string; 
+  kilometrajeActual?: number;
+  serviceChecklist?: {
+    aceite: boolean;
+    filtroAceite: boolean;
+    filtroAire: boolean;
+    frenos: boolean;
+    alineacion: boolean;
+    limpieza: boolean;
+  };
 }
 
 export interface Reservation {
   id: string;
   cliente: string;
-  email?: string;
+  email: string;
   ci: string;
+  documentType: 'CI' | 'RG' | 'Pasaporte';
   celular: string;
   auto: string;
   inicio: string;
   fin: string;
   total: number; // in BRL
-  paymentType?: 'Full' | 'OneDay';
-  comprobante?: string; // base64
   status: 'Requested' | 'Confirmed' | 'Completed' | 'Cancelled';
-  admissionStatus?: 'Approved' | 'Review' | 'Denied';
-  internalNotes?: string;
-  inspection?: InspectionChecklist;
-  includeInCalendar?: boolean; // Controla si bloquea fechas en el calendario
+  comprobante?: string;
+  driverLicense?: string;
+  signature?: string;
+  includeInCalendar?: boolean;
+  deliveryLog?: ChecklistLog;
+  receptionLog?: ChecklistLog;
 }
 
 export interface Gasto {
   id: string;
   concepto: string;
-  monto: number; // in BRL
+  monto: number;
   fecha: string;
   categoria: 'Mantenimiento' | 'Seguros' | 'Operativo' | 'Otros';
-}
-
-export interface User {
-  name: string;
-  email: string;
-  picture: string;
-  isAdmin: boolean;
 }
 
 export interface Breakdown {
@@ -69,5 +91,5 @@ export interface Breakdown {
   fecha: string;
   prioridad: 'Alta' | 'Media' | 'Baja';
   resuelta: boolean;
-  evidencia?: string[]; // Array de strings base64 (fotos/videos)
+  evidencia?: string[];
 }

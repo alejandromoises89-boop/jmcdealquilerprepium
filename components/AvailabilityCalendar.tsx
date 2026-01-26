@@ -1,68 +1,57 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Reservation } from '../types';
-import { ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { TRANSLATIONS, Language } from '../constants';
+import { ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 
 interface AvailabilityCalendarProps {
   vehicleName: string;
   reservations: Reservation[];
-  onDateSelect?: (date: Date) => void;
+  onDateRangeSelected?: (start: Date, end: Date) => void;
+  language?: Language;
 }
 
-const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName, reservations, onDateSelect }) => {
+const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName, reservations, onDateRangeSelected, language = 'es' }) => {
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
+  const [viewDate, setViewDate] = useState(new Date(now.getFullYear(), now.getMonth(), 1));
+  const [selectionStart, setSelectionStart] = useState<Date | null>(null);
+  const [selectionEnd, setSelectionEnd] = useState<Date | null>(null);
+  
+  const t = TRANSLATIONS[language];
 
-  const [viewDate, setViewDate] = useState(new Date(currentYear, currentMonth, 1));
-
-  // Límites de navegación: Mes actual hasta Febrero 2026
-  const minDate = new Date(currentYear, currentMonth, 1);
-  const maxDate = new Date(2026, 1, 1); // 1 = Febrero
-
+  // Unificamos todas las fechas ocupadas en un solo mapa de estado
   const occupiedDates = useMemo(() => {
     const occupied = new Set<string>();
-    
-    const keyTerm = vehicleName.toLowerCase().replace(/toyota|hyundai|blanco|negro|gris|suv|familiar|compacto/g, '').trim();
+    const keyTerm = vehicleName.toLowerCase()
+      .replace(/toyota|hyundai|blanco|negro|gris|suv|familiar|compacto/g, '')
+      .trim();
 
     reservations.forEach((r) => {
+      if (!r.inicio || r.status === 'Cancelled' || r.status === 'Completed') return;
       const resAuto = (r.auto || "").toLowerCase();
-      const isMatch = resAuto.includes(keyTerm) || keyTerm.includes(resAuto);
-      const isCancelled = r.status === 'Cancelled';
-      const isCalendarVisible = r.includeInCalendar !== false;
+      const isMatch = resAuto.includes(keyTerm) || keyTerm.includes(resAuto) || resAuto === vehicleName.toLowerCase();
       
-      if (isMatch && !isCancelled && isCalendarVisible) {
+      if (isMatch) {
         const parseD = (s: string) => {
           if (!s) return null;
           const datePart = s.split(' ')[0];
           const parts = datePart.split(/[/-]/);
           if (parts.length !== 3) return null;
-          
           let d, m, y;
-          if (parts[0].length === 4) { // YYYY-MM-DD
-            y = parseInt(parts[0]); m = parseInt(parts[1]) - 1; d = parseInt(parts[2]);
-          } else { // DD-MM-YYYY
-            d = parseInt(parts[0]); m = parseInt(parts[1]) - 1; y = parseInt(parts[2]);
-            if (y < 100) y += 2000;
-          }
-          return new Date(y, m, d);
+          if (parts[0].length === 4) { y = parseInt(parts[0]); m = parseInt(parts[1]) - 1; d = parseInt(parts[2]); }
+          else { d = parseInt(parts[0]); m = parseInt(parts[1]) - 1; y = parseInt(parts[2]); if (y < 100) y += 2000; }
+          const dt = new Date(y, m, d);
+          dt.setHours(0,0,0,0);
+          return dt;
         };
 
         const start = parseD(r.inicio);
         const end = parseD(r.fin);
-
         if (start && end) {
-          const curr = new Date(start);
-          curr.setHours(0, 0, 0, 0);
-          const last = new Date(end);
-          last.setHours(0, 0, 0, 0);
-          
-          const tempDate = new Date(curr);
-          let safety = 0;
-          while (tempDate <= last && safety < 100) {
+          const tempDate = new Date(start);
+          while (tempDate <= end) {
             occupied.add(tempDate.toISOString().split('T')[0]);
             tempDate.setDate(tempDate.getDate() + 1);
-            safety++;
           }
         }
       }
@@ -70,7 +59,39 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
     return occupied;
   }, [vehicleName, reservations]);
 
-  const monthName = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(viewDate);
+  // Manejo de la selección de fechas con delay de 2 segundos
+  const handleDateClick = (day: number) => {
+    const clickedDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+    clickedDate.setHours(0,0,0,0);
+
+    const dStr = clickedDate.toISOString().split('T')[0];
+    if (occupiedDates.has(dStr)) return; // No permitir seleccionar días alquilados
+
+    if (!selectionStart || (selectionStart && selectionEnd)) {
+      setSelectionStart(clickedDate);
+      setSelectionEnd(null);
+    } else if (selectionStart && !selectionEnd) {
+      if (clickedDate < selectionStart) {
+        setSelectionStart(clickedDate);
+      } else {
+        setSelectionEnd(clickedDate);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (selectionStart && selectionEnd && onDateRangeSelected) {
+      const timer = setTimeout(() => {
+        onDateRangeSelected(selectionStart, selectionEnd);
+        // Opcional: limpiar selección después de enviar
+        setSelectionStart(null);
+        setSelectionEnd(null);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [selectionStart, selectionEnd, onDateRangeSelected]);
+
+  const monthName = new Intl.DateTimeFormat(language === 'es' ? 'es-ES' : language === 'pt' ? 'pt-BR' : 'en-US', { month: 'long', year: 'numeric' }).format(viewDate);
   const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
   const firstDay = (new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay() + 6) % 7;
 
@@ -78,90 +99,78 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let i = 1; i <= daysInMonth; i++) days.push(i);
 
-  const handlePrev = () => {
-    const prevMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1);
-    if (prevMonth >= minDate) setViewDate(prevMonth);
-  };
-  
-  const handleNext = () => {
-    const nextMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1);
-    if (nextMonth <= maxDate) setViewDate(nextMonth);
+  const isInRange = (day: number) => {
+    if (!selectionStart || !selectionEnd) return false;
+    const d = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+    d.setHours(0,0,0,0);
+    return d >= selectionStart && d <= selectionEnd;
   };
 
-  const handleDayClick = (day: number) => {
-    const date = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-    const dStr = date.toISOString().split('T')[0];
-    if (occupiedDates.has(dStr)) return;
-    if (onDateSelect) onDateSelect(date);
+  const isSelected = (day: number) => {
+    const d = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+    d.setHours(0,0,0,0);
+    return (selectionStart && d.getTime() === selectionStart.getTime()) || 
+           (selectionEnd && d.getTime() === selectionEnd.getTime());
   };
-
-  const canGoPrev = viewDate > minDate;
-  const canGoNext = viewDate < maxDate;
 
   return (
-    <div className="bg-white rounded-[2rem] border border-gray-100 shadow-xl p-5 md:p-8 space-y-5 md:space-y-8 animate-fadeIn w-full mx-auto overflow-hidden">
-      <div className="flex justify-between items-center bg-gray-50/80 p-2 md:p-3 rounded-2xl md:rounded-[2.5rem] border border-gray-100">
+    <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-100 dark:border-gold/10 p-4 space-y-4 shadow-sm" onClick={(e) => e.stopPropagation()}>
+      <div className="flex justify-between items-center bg-gray-50 dark:bg-dark-base p-2 rounded-xl">
         <button 
-          onClick={handlePrev} 
-          disabled={!canGoPrev}
-          className={`p-2 md:p-3.5 rounded-xl md:rounded-2xl transition-all ${!canGoPrev ? 'text-gray-200 cursor-not-allowed opacity-30' : 'text-bordeaux-800 bg-white shadow-sm hover:scale-110 active:scale-90 border border-gray-50'}`}
+          onClick={(e) => { e.stopPropagation(); setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1)); }} 
+          className="p-1.5 hover:bg-white dark:hover:bg-dark-elevated rounded-lg text-bordeaux-800 dark:text-gold transition-all"
         >
-          <ChevronLeft size={16} className="md:w-6 md:h-6"/>
+          <ChevronLeft size={18}/>
         </button>
         <div className="text-center">
-          <p className="text-[8px] md:text-[10px] font-black text-gold uppercase tracking-[0.2em] md:tracking-[0.4em] mb-1 md:mb-1.5">Agenda VIP</p>
-          <h4 className="text-[11px] md:text-sm font-black text-bordeaux-950 uppercase tracking-widest italic truncate max-w-[150px]">
-             {monthName}
-          </h4>
+            <p className="text-[7px] font-black text-gold uppercase tracking-[0.3em] leading-none mb-1">Disponibilidad Real</p>
+            <h4 className="text-[10px] font-robust text-bordeaux-950 dark:text-white uppercase italic">{monthName}</h4>
         </div>
         <button 
-          onClick={handleNext} 
-          disabled={!canGoNext}
-          className={`p-2 md:p-3.5 rounded-xl md:rounded-2xl transition-all ${!canGoNext ? 'text-gray-200 cursor-not-allowed opacity-30' : 'text-bordeaux-800 bg-white shadow-sm hover:scale-110 active:scale-90 border border-gray-50'}`}
+          onClick={(e) => { e.stopPropagation(); setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1)); }} 
+          className="p-1.5 hover:bg-white dark:hover:bg-dark-elevated rounded-lg text-bordeaux-800 dark:text-gold transition-all"
         >
-          <ChevronRight size={16} className="md:w-6 md:h-6"/>
-        </button>
+          <ChevronRight size={18}/></button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 md:gap-2">
-        {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
-          <div key={i} className="text-[9px] md:text-xs font-black text-gray-300 text-center py-2 md:py-3 uppercase tracking-tighter">{d}</div>
-        ))}
+      <div className="grid grid-cols-7 gap-1">
+        {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(d => <div key={d} className="text-[8px] font-black text-gray-300 text-center py-1">{d}</div>)}
         {days.map((day, idx) => {
-          if (!day) return <div key={`empty-${idx}`} className="aspect-square" />;
-          
-          const dateObj = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-          const dStr = dateObj.toISOString().split('T')[0];
+          if (!day) return <div key={`empty-${idx}`} />;
+          const dObj = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+          dObj.setHours(0,0,0,0);
+          const dStr = dObj.toISOString().split('T')[0];
           const isOccupied = occupiedDates.has(dStr);
-          const isJan2026Plus = dateObj >= new Date(2026, 0, 1);
+          const selected = isSelected(day);
+          const inRange = isInRange(day);
 
           return (
-            <button 
+            <div 
               key={day} 
-              disabled={isOccupied}
-              onClick={() => handleDayClick(day)}
-              className={`relative aspect-square flex items-center justify-center text-[10px] md:text-xs font-black rounded-xl md:rounded-2xl transition-all border ${
+              onClick={() => handleDateClick(day)}
+              className={`aspect-square flex flex-col items-center justify-center text-[9px] font-robust rounded-lg border transition-all relative cursor-pointer ${
                 isOccupied 
-                ? 'bg-gray-100 text-gray-300 border-transparent cursor-not-allowed opacity-50' 
-                : 'bg-white text-bordeaux-950 border-gray-50 hover:bg-bordeaux-50 hover:border-gold/30 hover:scale-110 active:scale-95 shadow-sm'
+                  ? 'bg-bordeaux-800 text-white border-bordeaux-900 font-black cursor-not-allowed'
+                  : selected || inRange
+                    ? 'bg-gold text-dark-base border-gold font-black z-10 scale-105 shadow-lg'
+                    : 'bg-white dark:bg-dark-elevated text-gray-700 dark:text-white border-gray-50 dark:border-white/5 hover:border-gold/30'
               }`}
             >
-              <span>{day}</span>
-              {isOccupied && isJan2026Plus && (
-                <div className="absolute top-1 right-1 md:top-2 md:right-2 w-1.5 h-1.5 md:w-2 md:h-2 bg-gold rounded-full shadow-[0_0_5px_rgba(212,175,55,1)]" />
-              )}
-            </button>
+              {day}
+              {isOccupied && <Lock size={7} className="mt-0.5 opacity-60" />}
+            </div>
           );
         })}
       </div>
       
-      <div className="pt-4 md:pt-6 border-t border-gray-50">
-        <div className="bg-bordeaux-50/50 p-3 md:p-5 rounded-2xl md:rounded-3xl flex items-start gap-3 md:gap-4 border border-bordeaux-100/30">
-          <Info size={16} className="text-bordeaux-800 shrink-0 mt-0.5 md:w-[20px] md:h-[20px]" />
-          <p className="text-[8px] md:text-[10px] font-bold text-bordeaux-900 leading-relaxed uppercase tracking-wider">
-            Protocolo de <span className="text-gold font-black">bloqueo áureo</span> activo para la flota Platinum durante el ejercicio 2026.
-          </p>
+      <div className="pt-2 border-t dark:border-white/5 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 bg-bordeaux-800 rounded-full"></div>
+          <p className="text-[7px] font-black text-gray-400 uppercase tracking-widest">ALQUILADO / BLOQUEADO</p>
         </div>
+        {selectionStart && !selectionEnd && (
+          <p className="text-[7px] font-black text-gold animate-pulse uppercase tracking-widest">Seleccione fecha de entrega...</p>
+        )}
       </div>
     </div>
   );

@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Vehicle, Reservation } from '../types';
+import { TRANSLATIONS, Language, CONTRACT_CLAUSES } from '../constants';
 import { 
   X, ChevronRight, Upload, 
-  Copy, Check, User as UserIcon, 
-  MessageCircle, PenTool, Clock, ChevronLeft, CheckCircle2, AlertTriangle, FileText,
-  Sparkles, CreditCard, ShieldCheck, ArrowRight, Wallet, QrCode, Banknote
+  Check, User as UserIcon, 
+  ChevronLeft, Car, Calendar, Smartphone, CreditCard, Copy, 
+  QrCode, CheckCircle2, ShieldCheck, Mail, FileText, PenTool, ExternalLink, MessageCircle
 } from 'lucide-react';
 
 interface BookingModalProps {
@@ -14,292 +15,382 @@ interface BookingModalProps {
   reservations: Reservation[];
   onClose: () => void;
   onSubmit: (res: Reservation) => void;
+  language?: Language;
+  initialDates?: { start: Date; end: Date };
 }
 
-const BookingModal: React.FC<BookingModalProps> = ({ vehicle, exchangeRate, reservations, onClose, onSubmit }) => {
+const BookingModal: React.FC<BookingModalProps> = ({ vehicle, exchangeRate, reservations, onClose, onSubmit, language = 'es', initialDates }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     cliente: '',
     email: '',
     ci: '',
+    documentType: 'CI' as 'CI' | 'RG' | 'Pasaporte',
     celular: '',
-    inicio: '2026-01-01',
-    fin: '2026-01-02',
+    inicio: initialDates ? initialDates.start.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+    fin: initialDates ? initialDates.end.toISOString().split('T')[0] : new Date(Date.now() + 86400000).toISOString().split('T')[0],
     horaIni: '08:00',
-    horaFin: '08:00',
-    paymentType: 'Full' as 'Full' | 'OneDay',
-    signature: '',
-    payMethod: 'Pix' as 'Pix' | 'Card' | 'Transfer'
+    horaFin: '17:00',
+    payMethod: 'Pix' as 'Pix' | 'Transfer',
+    contractRead: false
   });
   
+  const [licenseBase64, setLicenseBase64] = useState<string | null>(null);
+  const [signatureBase64, setSignatureBase64] = useState<string | null>(null);
   const [receiptBase64, setReceiptBase64] = useState<string | null>(null);
   const [isAvailable, setIsAvailable] = useState(true);
-  const [copied, setCopied] = useState(false);
-
-  const stepsLabels = ["Plan", "Contrato", "Firma", "Pago", "Cierre"];
-
-  const startDateTime = new Date(`${formData.inicio}T${formData.horaIni}`);
-  const endDateTime = new Date(`${formData.fin}T${formData.horaFin}`);
-  const diffInHours = (endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60 * 60);
+  const [reservationId, setReservationId] = useState<string>('');
   
-  const days = Math.max(1, Math.ceil(diffInHours / 24));
-  const fullTotalBRL = Math.max(0, days * vehicle.precio);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+
+  const t = TRANSLATIONS[language];
+  const stepsLabels = t.steps;
+
+  const totals = useMemo(() => {
+    const start = new Date(`${formData.inicio}T${formData.horaIni}`);
+    const end = new Date(`${formData.fin}T${formData.horaFin}`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return { days: 1, fullTotalBRL: vehicle.precio };
+    const diffInHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+    const days = Math.max(1, Math.ceil(diffInHours / 24));
+    // Se mantiene el precio con decimales exactos
+    return { days, fullTotalBRL: parseFloat((days * vehicle.precio).toFixed(2)) };
+  }, [formData.inicio, formData.horaIni, formData.fin, formData.horaFin, vehicle.precio]);
+
+  const { days, fullTotalBRL } = totals;
 
   useEffect(() => {
-    // Verificación de disponibilidad lógica
-    const overlap = reservations.find(r => {
-      if (r.auto !== vehicle.nombre || r.status === 'Cancelled') return false;
+    const startDT = new Date(`${formData.inicio}T${formData.horaIni}`);
+    const endDT = new Date(`${formData.fin}T${formData.horaFin}`);
+    
+    const keyTerm = vehicle.nombre.toLowerCase()
+      .replace(/toyota|hyundai|blanco|negro|gris|suv|familiar|compacto/g, '')
+      .trim();
+
+    const overlap = (reservations || []).find(r => {
+      if (!r.inicio || r.status === 'Cancelled' || r.status === 'Completed') return false;
+      const resAuto = (r.auto || "").toLowerCase();
+      
+      const isMatch = resAuto.includes(keyTerm) || keyTerm.includes(resAuto) || resAuto === vehicle.nombre.toLowerCase();
+      if (!isMatch) return false;
+
       const parseD = (s: string) => {
+        if (!s) return null;
         const parts = s.split(' ');
-        const [d, m, y] = parts[0].split(/[/-]/);
-        const [h, min] = parts[1] ? parts[1].split(':') : ["00", "00"];
-        const year = y.length === 2 ? 2000 + parseInt(y) : parseInt(y);
-        return new Date(year, parseInt(m) - 1, parseInt(d), parseInt(h), parseInt(min));
+        const dateParts = parts[0].split(/[/-]/);
+        const timeParts = parts[1]?.split(':') || ['08','00'];
+        let y, m, d;
+        if (dateParts[0].length === 4) { y = parseInt(dateParts[0]); m = parseInt(dateParts[1])-1; d = parseInt(dateParts[2]); }
+        else { d = parseInt(dateParts[0]); m = parseInt(dateParts[1])-1; y = parseInt(dateParts[2]); if (y < 100) y += 2000; }
+        return new Date(y, m, d, parseInt(timeParts[0]), parseInt(timeParts[1]));
       };
+
       const rStart = parseD(r.inicio);
       const rEnd = parseD(r.fin);
-      return startDateTime < rEnd && endDateTime > rStart;
+      if (!rStart || !rEnd) return false;
+      
+      return startDT < rEnd && endDT > rStart;
     });
+
     setIsAvailable(!overlap);
   }, [formData.inicio, formData.fin, formData.horaIni, formData.horaFin, reservations, vehicle.nombre]);
 
+  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    setIsDrawing(true);
+    draw(e);
+  };
+
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawing || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : (e as React.MouseEvent).clientX - rect.left;
+    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : (e as React.MouseEvent).clientY - rect.top;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#800000';
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const endDrawing = () => {
+    setIsDrawing(false);
+    if (canvasRef.current) {
+      setSignatureBase64(canvasRef.current.toDataURL());
+    }
+    const canvas = canvasRef.current;
+    canvas?.getContext('2d')?.beginPath();
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (ctx && canvas) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      setSignatureBase64(null);
+    }
+  };
+
   const handleFinalConfirm = () => {
+    const resId = `JM-${Date.now().toString().slice(-6)}`;
+    setReservationId(resId);
     const newRes: Reservation = {
-      id: `JM${Math.floor(Math.random() * 9999)}`,
+      id: resId,
       cliente: formData.cliente,
+      email: formData.email,
       ci: formData.ci,
+      documentType: formData.documentType,
       celular: formData.celular,
       auto: vehicle.nombre,
       inicio: `${formData.inicio} ${formData.horaIni}`,
       fin: `${formData.fin} ${formData.horaFin}`,
       total: fullTotalBRL,
       status: 'Requested',
-      comprobante: receiptBase64 || undefined
+      comprobante: receiptBase64 || undefined,
+      driverLicense: licenseBase64 || undefined,
+      signature: signatureBase64 || undefined,
+      includeInCalendar: true
     };
     onSubmit(newRes);
-    const waText = `*JM ASOCIADOS - PROTOCOLO VIP*\n👤 *Socio:* ${formData.cliente}\n🚗 *Unidad:* ${vehicle.nombre}\n📅 *Inicio:* ${formData.inicio} ${formData.horaIni}\n📅 *Fin:* ${formData.fin} ${formData.horaFin}\n💰 *Total:* R$ ${fullTotalBRL}\n\n_Solicitud enviada para validación final._`;
-    window.open(`https://wa.me/595991681191?text=${encodeURIComponent(waText)}`, '_blank');
+    setStep(6);
+  };
+
+  const sendToWhatsApp = () => {
+    const text = `Hola JM Asociados, solicito validación de mi reserva:\n\nID: ${reservationId}\nSocio: ${formData.cliente}\nUnidad: ${vehicle.nombre}\nPeriodo: ${formData.inicio} ${formData.horaIni} hasta ${formData.fin} ${formData.horaFin}\nTotal: R$ ${fullTotalBRL.toFixed(2)}`;
+    window.open(`https://wa.me/595991681191?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const isNextDisabled = () => {
+    if (step === 1) {
+      const hIni = parseInt(formData.horaIni.split(':')[0]);
+      const hFin = parseInt(formData.horaFin.split(':')[0]);
+      return !isAvailable || hIni < 8 || hIni > 17 || hFin < 8 || hFin > 17;
+    }
+    if (step === 2) return !formData.cliente || !formData.email || !formData.ci || !formData.celular || !licenseBase64;
+    if (step === 3) return !formData.contractRead || !signatureBase64;
+    if (step === 4) return !receiptBase64;
+    return false;
   };
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-end md:items-center justify-center bg-black/90 backdrop-blur-md overflow-hidden">
-      <div className="relative bg-white w-full max-w-5xl h-[94vh] md:h-auto md:max-h-[92vh] rounded-t-[3rem] md:rounded-[4rem] shadow-2xl flex flex-col overflow-hidden animate-slideUp">
+    <div className="fixed inset-0 z-[150] flex items-end md:items-center justify-center bg-bordeaux-950/95 backdrop-blur-md p-0 md:p-4">
+      <div className="relative bg-white dark:bg-dark-base w-full max-w-2xl h-[95vh] md:h-auto md:max-h-[90vh] rounded-t-[3rem] md:rounded-[3rem] shadow-2xl flex flex-col overflow-hidden animate-slideUp border-t md:border-2 border-gold/20">
         
-        {/* Header de Progreso */}
-        <div className="bg-white px-6 py-6 md:px-12 md:py-8 border-b border-gray-100 flex flex-col gap-5">
-           <div className="flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                 <button onClick={step > 1 ? () => setStep(step - 1) : onClose} className="p-3 bg-gray-50 rounded-2xl text-bordeaux-800 hover:bg-bordeaux-50 transition-all">
-                    <ChevronLeft size={20} />
-                 </button>
-                 <div>
-                    <h2 className="text-[10px] md:text-xs font-black text-bordeaux-950 uppercase tracking-[0.4em]">{stepsLabels[step-1]}</h2>
-                    <p className="text-[8px] font-bold text-gold uppercase tracking-widest mt-1">JM Associates Terminal</p>
-                 </div>
-              </div>
-              <button onClick={onClose} className="p-3 bg-gray-50 text-gray-400 rounded-2xl hover:bg-red-500 hover:text-white transition-all">
-                 <X size={18} />
-              </button>
-           </div>
-           <div className="flex gap-2 max-w-md mx-auto w-full">
-              {stepsLabels.map((_, i) => (
-                <div key={i} className={`h-1 flex-1 rounded-full transition-all duration-700 ${step > i ? 'bg-bordeaux-800' : 'bg-gray-100'}`} />
-              ))}
-           </div>
-        </div>
+        {step < 6 && (
+          <div className="px-8 py-5 border-b dark:border-gold/10 bg-white dark:bg-dark-card">
+             <div className="flex justify-between items-center mb-2">
+                <button onClick={step > 1 ? () => setStep(step - 1) : onClose} className="p-2 bg-gray-50 dark:bg-dark-elevated rounded-xl text-gold">
+                  <ChevronLeft size={20} />
+                </button>
+                <div className="text-center">
+                  <h2 className="text-[10px] font-black text-gold uppercase tracking-[0.3em] leading-none mb-1">Paso {step} de 5</h2>
+                  <p className="text-xs font-robust text-bordeaux-950 dark:text-white italic uppercase tracking-tight">{stepsLabels[step-1]}</p>
+                </div>
+                <button onClick={onClose} className="p-2 text-gray-400"><X size={20} /></button>
+             </div>
+             <div className="h-1 bg-gray-100 dark:bg-dark-base rounded-full overflow-hidden">
+                <div className="h-full bordeaux-gradient transition-all duration-500" style={{ width: `${(step/5)*100}%` }}></div>
+             </div>
+          </div>
+        )}
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 md:p-14 space-y-8 scrollbar-hide pb-40">
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 scrollbar-hide pb-32">
            
+           {/* PASO 1: HORARIOS Y DISPONIBILIDAD */}
            {step === 1 && (
-             <div className="space-y-8 animate-fadeIn">
-                <div className="bordeaux-gradient p-8 rounded-[2.5rem] text-white text-center space-y-4 shadow-xl relative overflow-hidden">
-                   <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl"></div>
-                   <h4 className="text-xl md:text-4xl font-serif font-bold italic tracking-tight">Presupuesto <span className="text-gold">Platinum</span></h4>
-                   <div className="flex justify-center items-center gap-8 md:gap-16">
-                      <div className="space-y-1">
-                         <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Inversión Total</p>
-                         <p className="text-2xl md:text-5xl font-black">R$ {fullTotalBRL}</p>
-                      </div>
-                      <div className="w-px h-12 bg-white/20"></div>
-                      <div className="space-y-1">
-                         <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Duración</p>
-                         <p className="text-2xl md:text-5xl font-black">{days} {days === 1 ? 'Día' : 'Días'}</p>
-                      </div>
-                   </div>
+             <div className="space-y-6 animate-slideUp">
+                <div className="bg-bordeaux-950 dark:bg-dark-card p-6 rounded-[2rem] border-2 border-gold/20 text-white flex justify-around">
+                   <div className="text-center"><p className="text-[7px] font-black text-gold uppercase">Días</p><p className="text-2xl font-robust">{days}</p></div>
+                   <div className="w-px h-8 bg-white/10"></div>
+                   <div className="text-center"><p className="text-[7px] font-black text-gold uppercase">Inversión</p><p className="text-2xl font-robust">R$ {fullTotalBRL.toFixed(2)}</p></div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                   <div className="bg-white p-7 rounded-[2.5rem] border border-gray-100 shadow-lg space-y-6">
-                      <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-3"><Clock size={16} className="text-gold" /> Cronograma</h5>
-                      <div className="space-y-4">
-                         <div className="flex flex-col sm:flex-row gap-2">
-                            <input type="date" value={formData.inicio} onChange={e => setFormData({...formData, inicio: e.target.value})} className="flex-1 bg-gray-50 border-0 rounded-2xl px-5 py-4 font-bold text-xs" />
-                            <input type="time" value={formData.horaIni} onChange={e => setFormData({...formData, horaIni: e.target.value})} className="w-full sm:w-28 bg-gray-50 border-0 rounded-2xl px-5 py-4 font-bold text-xs" />
-                         </div>
-                         <div className="flex flex-col sm:flex-row gap-2">
-                            <input type="date" value={formData.fin} onChange={e => setFormData({...formData, fin: e.target.value})} className="flex-1 bg-gray-50 border-0 rounded-2xl px-5 py-4 font-bold text-xs" />
-                            <input type="time" value={formData.horaFin} onChange={e => setFormData({...formData, horaFin: e.target.value})} className="w-full sm:w-28 bg-gray-50 border-0 rounded-2xl px-5 py-4 font-bold text-xs" />
-                         </div>
-                      </div>
-                      {!isAvailable && <p className="text-[10px] font-bold text-red-500 bg-red-50 p-4 rounded-2xl flex items-center gap-3 animate-pulse uppercase tracking-widest"><AlertTriangle size={14} /> Unidad ocupada en estas fechas</p>}
-                   </div>
-
-                   <div className="bg-white p-7 rounded-[2.5rem] border border-gray-100 shadow-lg space-y-6">
-                      <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-3"><UserIcon size={16} className="text-gold" /> Identidad Socio</h5>
-                      <div className="space-y-4">
-                         <input type="text" placeholder="Nombre Oficial" value={formData.cliente} onChange={e => setFormData({...formData, cliente: e.target.value})} className="w-full bg-gray-50 border-0 rounded-2xl px-6 py-4 font-bold text-sm shadow-inner" />
-                         <input type="text" placeholder="Cédula / RG" value={formData.ci} onChange={e => setFormData({...formData, ci: e.target.value})} className="w-full bg-gray-50 border-0 rounded-2xl px-6 py-4 font-bold text-sm shadow-inner" />
-                         <input type="tel" placeholder="WhatsApp" value={formData.celular} onChange={e => setFormData({...formData, celular: e.target.value})} className="w-full bg-gray-50 border-0 rounded-2xl px-6 py-4 font-bold text-sm shadow-inner" />
-                      </div>
-                   </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-gray-50 dark:bg-dark-elevated rounded-2xl space-y-2 border dark:border-white/5">
+                    <p className="text-[8px] font-black text-gold uppercase tracking-widest">Retiro (08:00 - 17:00)</p>
+                    <input type="date" value={formData.inicio} onChange={e => setFormData({...formData, inicio: e.target.value})} className="w-full bg-white dark:bg-dark-base p-2 rounded-lg text-xs font-bold" />
+                    <input type="time" value={formData.horaIni} onChange={e => setFormData({...formData, horaIni: e.target.value})} className="w-full bg-white dark:bg-dark-base p-2 rounded-lg text-xs font-bold" />
+                  </div>
+                  <div className="p-4 bg-gray-50 dark:bg-dark-elevated rounded-2xl space-y-2 border dark:border-white/5">
+                    <p className="text-[8px] font-black text-gold uppercase tracking-widest">Entrega (08:00 - 17:00)</p>
+                    <input type="date" value={formData.fin} onChange={e => setFormData({...formData, fin: e.target.value})} className="w-full bg-white dark:bg-dark-base p-2 rounded-lg text-xs font-bold" />
+                    <input type="time" value={formData.horaFin} onChange={e => setFormData({...formData, horaFin: e.target.value})} className="w-full bg-white dark:bg-dark-base p-2 rounded-lg text-xs font-bold" />
+                  </div>
                 </div>
+
+                <div className="p-4 bg-gold/5 rounded-2xl border border-gold/20">
+                   <p className="text-[8px] font-black text-gold uppercase mb-2 flex items-center gap-2"><ShieldCheck size={12}/> Protocolo de Puntualidad</p>
+                   <ul className="text-[7.5px] font-bold text-gray-500 dark:text-gray-400 space-y-1 leading-tight uppercase">
+                      <li>• Retiro y entrega estrictamente entre 08:00 y 17:00 hs.</li>
+                      <li>• Tolerancia máxima de 1 hora de retraso con previo aviso.</li>
+                      <li>• Retrasos mayores incurren en multas de media diaria.</li>
+                   </ul>
+                </div>
+
+                {!isAvailable && <div className="p-3 bg-red-600/10 text-red-600 rounded-xl text-[9px] font-robust text-center border border-red-600/20 uppercase animate-pulse">Unidad no disponible (Local o Nube)</div>}
              </div>
            )}
 
+           {/* PASO 2: SOCIO Y DOCUMENTOS */}
            {step === 2 && (
-             <div className="space-y-6 animate-fadeIn">
-                <div className="bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-2xl space-y-8 relative overflow-hidden">
-                   <div className="absolute top-0 right-0 p-8 opacity-5"><FileText size={150} className="text-bordeaux-800" /></div>
-                   <h3 className="text-2xl md:text-3xl font-serif font-bold text-bordeaux-950 text-center italic">Arrendamiento Digital</h3>
-                   <div className="max-h-[350px] overflow-y-auto text-xs md:text-sm leading-relaxed text-gray-600 space-y-5 pr-4 airbnb-scrollbar">
-                      <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
-                         <p><b>PRIMERA:</b> El arrendador entrega la unidad <b>{vehicle.nombre}</b> bajo condiciones de mantenimiento premium verificadas.</p>
-                      </div>
-                      <p><b>SEGUNDA:</b> El arrendatario se compromete a la devolución el día <b>{formData.fin}</b> a las <b>{formData.horaFin}</b>.</p>
-                      <p><b>TERCERA:</b> Retrasos injustificados incurrirán en multas equivalentes al 50% de la diaria por cada 2 horas de excedente.</p>
-                      <p><b>CUARTA:</b> El seguro integral requiere reporte inmediato y denuncia policial en caso de siniestro.</p>
-                      <p><b>QUINTA:</b> Prohibido fumar o transportar sustancias ilícitas dentro de la unidad Platinum.</p>
-                   </div>
+             <div className="space-y-6 animate-slideUp">
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="relative"><UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-gold" size={16}/><input type="text" placeholder="NOMBRE COMPLETO" value={formData.cliente} onChange={e => setFormData({...formData, cliente: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl pl-12 pr-4 py-4 text-xs font-bold outline-none" /></div>
+                  <div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gold" size={16}/><input type="email" placeholder="CORREO ELECTRÓNICO" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl pl-12 pr-4 py-4 text-xs font-bold outline-none" /></div>
+                  <div className="relative"><Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-gold" size={16}/><input type="tel" placeholder="CELULAR" value={formData.celular} onChange={e => setFormData({...formData, celular: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl pl-12 pr-4 py-4 text-xs font-bold outline-none" /></div>
+                  <div className="flex gap-2">
+                     <select value={formData.documentType} onChange={e => setFormData({...formData, documentType: e.target.value as any})} className="bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-4 py-4 text-xs font-bold outline-none border-0">
+                        <option value="CI">CI</option><option value="RG">RG</option><option value="Pasaporte">PAS</option>
+                     </select>
+                     <input type="text" placeholder="NRO DOCUMENTO" value={formData.ci} onChange={e => setFormData({...formData, ci: e.target.value})} className="flex-1 bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-4 text-xs font-bold outline-none" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[8px] font-black text-gold uppercase tracking-widest ml-1">Licencia de Conducir (Adjuntar)</p>
+                  <label className="flex flex-col items-center justify-center gap-3 w-full h-32 border-2 border-dashed border-gold/20 rounded-3xl bg-gray-50 dark:bg-dark-elevated cursor-pointer hover:bg-gold/5 transition-all">
+                    <input type="file" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onloadend = () => setLicenseBase64(r.result as string); r.readAsDataURL(f); } }} />
+                    {licenseBase64 ? <CheckCircle2 size={30} className="text-green-500" /> : <Upload size={30} className="text-gray-300" />}
+                    <span className="text-[8px] font-black text-gray-400 uppercase">Habilitación de Conducir</span>
+                  </label>
                 </div>
              </div>
            )}
 
+           {/* PASO 3: CONTRATO DIGITAL */}
            {step === 3 && (
-             <div className="space-y-12 animate-fadeIn text-center max-w-lg mx-auto py-8">
-                <div className="w-24 h-24 bg-bordeaux-50 rounded-[2.5rem] flex items-center justify-center mx-auto text-bordeaux-800 shadow-inner">
-                   <PenTool size={40} />
-                </div>
-                <div className="space-y-4">
-                   <h3 className="text-3xl font-serif font-bold text-bordeaux-950 italic">Sello de Conformidad</h3>
-                   <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.4em]">Valide el contrato con su firma oficial</p>
-                </div>
-                <input 
-                  type="text" 
-                  placeholder="Escriba su nombre completo aquí" 
-                  value={formData.signature} 
-                  onChange={e => setFormData({...formData, signature: e.target.value})} 
-                  className="w-full border-b-4 border-bordeaux-800 py-6 text-2xl md:text-4xl font-serif text-center outline-none bg-transparent placeholder:text-gray-100 transition-all focus:border-gold" 
-                />
-                <p className="text-[8px] text-gold font-black uppercase tracking-widest leading-loose">
-                   Esta rúbrica digital vincula su identidad al protocolo corporativo #JM-{Math.floor(Math.random() * 8999)}
-                </p>
-             </div>
-           )}
-
-           {step === 4 && (
-             <div className="space-y-8 animate-fadeIn text-center max-w-xl mx-auto">
-                <div className="bg-white p-8 md:p-12 rounded-[3.5rem] border border-gray-100 shadow-2xl space-y-8 relative overflow-hidden group">
-                   <div className="absolute top-0 left-0 w-full h-1.5 bordeaux-gradient"></div>
-                   <div className="flex justify-center">
-                     <div className="px-8 py-3 bg-bordeaux-950 text-gold rounded-full text-[10px] font-black uppercase tracking-[0.5em] shadow-xl flex items-center gap-3">
-                        <Sparkles size={14} className="animate-pulse" /> TERMINAL JM
-                     </div>
-                   </div>
-
-                   <div className="grid grid-cols-3 gap-3">
-                      {[
-                        { id: 'Pix', label: 'PIX / QR', icon: QrCode },
-                        { id: 'Card', label: 'Tarjeta', icon: CreditCard },
-                        { id: 'Transfer', label: 'Transfer', icon: Banknote }
-                      ].map(method => (
-                        <button 
-                          key={method.id}
-                          onClick={() => setFormData({...formData, payMethod: method.id as any})}
-                          className={`flex flex-col items-center gap-3 p-6 rounded-3xl border-2 transition-all ${formData.payMethod === method.id ? 'bg-bordeaux-50 border-bordeaux-800 text-bordeaux-800' : 'bg-gray-50 border-gray-100 text-gray-300'}`}
-                        >
-                           <method.icon size={24} />
-                           <span className="text-[8px] font-black uppercase tracking-widest">{method.label}</span>
-                        </button>
-                      ))}
-                   </div>
-                   
-                   <div className="p-8 bg-bordeaux-50 rounded-[2.5rem] border-2 border-bordeaux-100 relative overflow-hidden flex flex-col items-center">
-                      <div className="absolute top-0 right-0 p-4 opacity-5"><Wallet size={100} /></div>
-                      <p className="text-[10px] font-black text-bordeaux-800/40 mb-3 uppercase tracking-widest">Protocolo de Llave Corporativa:</p>
-                      <code className="text-xl md:text-3xl font-black text-bordeaux-950 tracking-tight">24510861818</code>
-                      <button onClick={() => { navigator.clipboard.writeText("24510861818"); setCopied(true); setTimeout(() => setCopied(false), 2000); }} className="mt-6 flex items-center gap-2 px-6 py-2 bg-gold text-white rounded-full text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">
-                         {copied ? <Check size={14} /> : <Copy size={14} />}
-                         {copied ? 'Copiado' : 'Copiar Identificador'}
-                      </button>
-                   </div>
-                </div>
-             </div>
-           )}
-
-           {step === 5 && (
-             <div className="space-y-8 animate-fadeIn text-center max-w-xl mx-auto py-4">
-                <div className="space-y-4">
-                   <h3 className="text-3xl md:text-4xl font-serif font-bold text-bordeaux-950 italic">Activación de <span className="text-gold">Expediente</span></h3>
-                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em]">Suba el comprobante oficial de la transacción</p>
+             <div className="space-y-6 animate-slideUp">
+                <div className="bg-gray-50 dark:bg-dark-card p-6 rounded-[2rem] border dark:border-gold/10 max-h-80 overflow-y-auto space-y-4 shadow-inner text-[9.5px] leading-relaxed dark:text-gray-300">
+                   <h3 className="text-xs font-robust text-bordeaux-950 dark:text-white text-center border-b pb-2 mb-4">CONTRATO DE ALQUILER JM ASOCIADOS</h3>
+                   {CONTRACT_CLAUSES.map((c, i) => (
+                     <p key={i}><b>{i+1}.</b> {c.replace('el vehículo descrito', vehicle.nombre).replace('el periodo acordado', `${formData.inicio} - ${formData.fin}`)}</p>
+                   ))}
                 </div>
                 
-                <label className={`block w-full min-h-[350px] border-[3px] border-dashed rounded-[4rem] transition-all duration-700 cursor-pointer p-8 relative group ${receiptBase64 ? 'border-green-500 bg-green-50/20' : 'border-bordeaux-100 bg-bordeaux-50/30'}`}>
-                   <input type="file" className="hidden" onChange={e => {
-                     const file = e.target.files?.[0];
-                     if (file) {
-                       const reader = new FileReader();
-                       reader.onloadend = () => setReceiptBase64(reader.result as string);
-                       reader.readAsDataURL(file);
-                     }
-                   }} />
-                   
-                   {receiptBase64 ? (
-                     <div className="h-full flex flex-col items-center justify-center gap-6">
-                        <img src={receiptBase64} className="max-h-[220px] rounded-2xl shadow-xl border-4 border-white" alt="Recibo" />
-                        <div className="bg-green-600 text-white px-8 py-3 rounded-2xl flex items-center gap-3 text-[10px] font-black uppercase tracking-widest shadow-xl">
-                           <ShieldCheck size={18} /> Evidencia Cargada
-                        </div>
-                     </div>
-                   ) : (
-                     <div className="flex flex-col items-center justify-center gap-6 h-full py-16">
-                        <div className="p-8 bg-white rounded-[3rem] shadow-xl group-hover:scale-110 transition-all duration-500">
-                           <Upload size={40} className="text-gold" />
-                        </div>
-                        <p className="text-sm font-black uppercase text-bordeaux-950 tracking-[0.3em]">Adjuntar Imagen</p>
-                     </div>
-                   )}
-                </label>
+                <div className="flex items-start gap-3 p-4 bg-gold/5 rounded-2xl border border-gold/20">
+                   <input type="checkbox" checked={formData.contractRead} onChange={() => setFormData({...formData, contractRead: !formData.contractRead})} className="mt-1 w-5 h-5 rounded border-gold text-bordeaux-800" />
+                   <p className="text-[9px] font-bold text-bordeaux-950 dark:text-gold uppercase leading-tight">He leído y acepto íntegramente las 12 cláusulas del contrato de alquiler.</p>
+                </div>
+
+                <div className="space-y-2">
+                   <div className="flex justify-between items-center px-1">
+                      <p className="text-[8px] font-black text-gold uppercase tracking-widest">Firma Digital (Con el dedo)</p>
+                      <button onClick={clearSignature} className="text-[8px] font-black text-red-500 uppercase">Limpiar</button>
+                   </div>
+                   <canvas 
+                    ref={canvasRef}
+                    width={500}
+                    height={150}
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={endDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={endDrawing}
+                    className="w-full h-32 bg-white dark:bg-gray-100 rounded-2xl border-2 border-gold/10 cursor-crosshair shadow-inner"
+                   />
+                </div>
+             </div>
+           )}
+
+           {/* PASO 4: PAGO Y ACTIVACIÓN */}
+           {step === 4 && (
+             <div className="space-y-6 animate-slideUp text-center">
+                <div className="flex bg-gray-50 dark:bg-dark-elevated p-1 rounded-2xl border dark:border-white/5 gap-1 mb-6">
+                   {['Pix', 'Transfer'].map(m => (
+                     <button key={m} onClick={() => setFormData({...formData, payMethod: m as any})} className={`flex-1 py-3 rounded-xl text-[9px] font-robust transition-all ${formData.payMethod === m ? 'bg-bordeaux-950 text-white shadow-lg' : 'text-gray-400'}`}>{m.toUpperCase()}</button>
+                   ))}
+                </div>
+
+                <div className="bg-white dark:bg-dark-card p-8 rounded-[2.5rem] border-2 border-gold/20 space-y-6 relative overflow-hidden">
+                   <div className="absolute top-0 right-0 w-24 h-24 bg-gold/5 rounded-full -mr-12 -mt-12"></div>
+                   <p className="text-[9px] font-black text-gold uppercase tracking-widest">Datos de Transferencia</p>
+                   <div className="space-y-4 text-left">
+                      <div className="flex justify-between items-center bg-gray-50 dark:bg-dark-base p-4 rounded-xl">
+                        <div><p className="text-[7px] font-bold text-gray-400 uppercase">Clave PIX / Cuenta</p><p className="text-xs font-robust dark:text-white tracking-widest">{formData.payMethod === 'Pix' ? t.payData.pix : t.payData.acc}</p></div>
+                        <button onClick={() => { navigator.clipboard.writeText(formData.payMethod === 'Pix' ? t.payData.pix : t.payData.acc); alert(t.copied); }} className="p-2 text-gold"><Copy size={16}/></button>
+                      </div>
+                      <div className="flex justify-between items-center p-1 px-4">
+                        <div><p className="text-[7px] font-bold text-gray-400 uppercase">Banco</p><p className="text-xs font-robust dark:text-white">{t.payData.bank}</p></div>
+                        <div className="text-right"><p className="text-[7px] font-bold text-gray-400 uppercase">Titular</p><p className="text-xs font-robust dark:text-white">{t.payData.holder}</p></div>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[8px] font-black text-gold uppercase tracking-widest ml-1">Adjuntar Comprobante de Pago</p>
+                  <label className="flex flex-col items-center justify-center gap-3 w-full h-32 border-2 border-dashed border-gold/20 rounded-3xl bg-gray-50 dark:bg-dark-elevated cursor-pointer hover:bg-gold/5 transition-all">
+                    <input type="file" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onloadend = () => setReceiptBase64(r.result as string); r.readAsDataURL(f); } }} />
+                    {receiptBase64 ? <CheckCircle2 size={30} className="text-green-500" /> : <Upload size={30} className="text-gray-300" />}
+                    <span className="text-[8px] font-black text-gray-400 uppercase">Comprobante de Depósito</span>
+                  </label>
+                </div>
+             </div>
+           )}
+
+           {/* PASO 5: TICKET JM */}
+           {step === 5 && (
+             <div className="space-y-6 animate-slideUp">
+                <div className="bg-white dark:bg-dark-card rounded-[3rem] border-2 border-gold/10 shadow-2xl overflow-hidden">
+                   <div className="bordeaux-gradient p-8 text-center text-white space-y-2">
+                      <div className="w-16 h-16 bg-white/10 rounded-3xl flex items-center justify-center mx-auto text-gold mb-2 border border-gold/30"><ShieldCheck size={32}/></div>
+                      <h4 className="text-xl font-robust italic uppercase tracking-tight">Ticket de Reserva</h4>
+                      <p className="text-[9px] font-black uppercase text-gold/60">Sujeto a Validación JM</p>
+                   </div>
+                   <div className="p-8 space-y-6">
+                      <div className="flex justify-between border-b dark:border-white/5 pb-4">
+                         <div><p className="text-[7px] font-black text-gray-400 uppercase">Socio</p><p className="text-xs font-robust dark:text-white uppercase">{formData.cliente}</p></div>
+                         <div className="text-right"><p className="text-[7px] font-black text-gray-400 uppercase">Unidad</p><p className="text-xs font-robust dark:text-white uppercase">{vehicle.nombre}</p></div>
+                      </div>
+                      <div className="flex justify-between border-b dark:border-white/5 pb-4">
+                         <div><p className="text-[7px] font-black text-gray-400 uppercase">Recojo</p><p className="text-xs font-robust dark:text-white italic">{formData.inicio} {formData.horaIni}</p></div>
+                         <div className="text-right"><p className="text-[7px] font-black text-gray-400 uppercase">Entrega</p><p className="text-xs font-robust dark:text-white italic">{formData.fin} {formData.horaFin}</p></div>
+                      </div>
+                      <div className="text-center pt-2">
+                         <p className="text-[7px] font-black text-gold uppercase tracking-[0.4em] mb-1">Inversión Total</p>
+                         <p className="text-3xl font-robust text-bordeaux-950 dark:text-white italic">R$ {fullTotalBRL.toFixed(2)}</p>
+                      </div>
+                   </div>
+                </div>
+                
+                <button onClick={sendToWhatsApp} className="w-full flex items-center justify-center gap-3 py-5 bg-green-600 text-white rounded-[2rem] font-robust text-[11px] uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all">
+                   <MessageCircle size={18} /> Enviar Validación WhatsApp
+                </button>
+             </div>
+           )}
+
+           {/* PASO 6: ÉXITO / VALIDACIÓN */}
+           {step === 6 && (
+             <div className="animate-slideUp flex flex-col items-center text-center gap-8 py-10">
+                <div className="w-24 h-24 bg-gold/10 rounded-[2.5rem] flex items-center justify-center text-gold border-2 border-gold/30 shadow-2xl animate-pulse">
+                   <Check size={48} />
+                </div>
+                <div className="space-y-4">
+                   <h3 className="text-2xl font-robust font-speed text-bordeaux-950 dark:text-white italic uppercase">Protocolo Iniciado</h3>
+                   <div className="p-6 bg-gray-50 dark:bg-dark-card rounded-3xl border dark:border-white/5 space-y-4">
+                      <p className="text-xs font-bold text-gray-500 dark:text-gray-400 leading-relaxed uppercase tracking-tight">Hemos registrado su solicitud con ID <span className="text-bordeaux-800 dark:text-gold">{reservationId}</span>.</p>
+                      <p className="text-[10px] font-black text-bordeaux-950 dark:text-white uppercase">Sujeto a validación del comprobante y documentos por nuestra central.</p>
+                      <p className="text-[9px] font-bold text-gray-400 italic">Se ha enviado una copia del registro a su correo: {formData.email}</p>
+                   </div>
+                </div>
+                <button onClick={onClose} className="w-full py-5 border-2 border-gold/20 text-gold rounded-[2rem] font-robust text-[10px] uppercase tracking-widest hover:bg-gold hover:text-white transition-all">Volver a Flota VIP</button>
              </div>
            )}
         </div>
 
-        {/* Floating Footer Controls */}
-        <div className="absolute bottom-0 left-0 right-0 p-6 md:p-10 bg-white/95 backdrop-blur-md border-t border-gray-100 flex flex-col md:flex-row gap-4 z-[170] shadow-2xl">
-           <button 
-            onClick={() => step < 5 ? setStep(step + 1) : handleFinalConfirm()} 
-            disabled={(step === 1 && (!formData.cliente || !isAvailable)) || (step === 3 && !formData.signature) || (step === 5 && !receiptBase64)}
-            className={`flex-1 py-6 rounded-[2.5rem] font-black text-[12px] md:text-[14px] uppercase tracking-[0.6em] shadow-xl transition-all active:scale-95 flex items-center justify-center gap-4 ${
-              step === 5 ? 'bordeaux-gradient text-white' : 'bg-bordeaux-950 text-white hover:bg-black'
-            } disabled:opacity-20`}
-           >
-             {step === 5 ? 'Finalizar Solicitud' : 'Continuar Protocolo'}
-             <ChevronRight size={20} className={step === 5 ? 'text-gold' : 'text-gray-400'} />
-           </button>
-           
-           {step === 5 && (
-             <button onClick={handleFinalConfirm} className="w-full md:w-32 py-6 bg-green-600 text-white rounded-[2.5rem] flex items-center justify-center shadow-2xl hover:bg-green-700 active:scale-95 transition-all group">
-               <MessageCircle size={28} className="group-hover:rotate-12 transition-transform" />
+        {step < 6 && (
+          <div className="absolute bottom-0 left-0 right-0 p-6 bg-white/95 dark:bg-dark-base/95 backdrop-blur-xl border-t dark:border-white/5 z-[160] flex gap-3">
+             <button onClick={() => step < 5 ? setStep(step + 1) : handleFinalConfirm()} disabled={isNextDisabled()} 
+               className="flex-1 py-5 bordeaux-gradient text-white rounded-[2rem] font-robust text-[11px] uppercase tracking-[0.4em] shadow-xl disabled:opacity-20 transition-all flex items-center justify-center gap-2">
+               {step === 5 ? 'Confirmar Reserva' : 'Siguiente'} <ChevronRight size={18} />
              </button>
-           )}
-        </div>
+          </div>
+        )}
       </div>
-      
-      <style>{`
-        .airbnb-scrollbar::-webkit-scrollbar { width: 4px; }
-        .airbnb-scrollbar::-webkit-scrollbar-thumb { background: #80000020; border-radius: 10px; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-      `}</style>
     </div>
   );
 };

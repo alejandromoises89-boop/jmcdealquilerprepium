@@ -43,9 +43,25 @@ const parseCSV = (text: string): string[][] => {
   return result;
 };
 
+// Función robusta para parsear montos de la planilla (maneja 1.750,00 -> 1750.00)
+const parseSheetAmount = (val: string): number => {
+  if (!val) return 0;
+  // Si contiene coma y punto, asumimos formato 1.234,56
+  // Eliminamos puntos de miles y cambiamos coma por punto decimal
+  let clean = val.replace(/\s/g, '');
+  if (clean.includes(',') && clean.includes('.')) {
+    clean = clean.replace(/\./g, '').replace(',', '.');
+  } else if (clean.includes(',')) {
+    // Si solo tiene coma, es el decimal
+    clean = clean.replace(',', '.');
+  }
+  const num = parseFloat(clean.replace(/[^0-9.]/g, ''));
+  return isNaN(num) ? 0 : num;
+};
+
 export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null> => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000); 
+  const timeoutId = setTimeout(() => controller.abort(), 15000); 
 
   try {
     const response = await fetch(`${GOOGLE_SHEET_RESERVATIONS_URL}&cache_bust=${Date.now()}`, {
@@ -56,16 +72,15 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
     if (!response.ok) return null;
 
     const csvText = await response.text();
-    if (csvText.includes('<!DOCTYPE html>')) {
-      console.warn("Google Sheets returned HTML instead of CSV. Ensure the sheet is public or the URL is correct.");
-      return null;
-    }
+    if (csvText.includes('<!DOCTYPE html>')) return null;
 
     const rows = parseCSV(csvText);
     if (rows.length < 2) return [];
 
     const headers = rows[0].map(h => h.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
-    const dataRows = rows.slice(1);
+    
+    // Sincronización desde la fila 98 (índice 97) para registros 2026 en adelante
+    const dataRows = rows.slice(97);
 
     return dataRows.map((row, index): Reservation => {
       const getVal = (possibleHeaders: string[]) => {
@@ -77,52 +92,49 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
         return '';
       };
 
-      const includeInCalStr = getVal(['includeInCalendar', 'calendar', 'visible', 'calendario']).toLowerCase();
-      // Default to true unless explicitly false or no
-      const includeInCalendar = includeInCalStr === '' || includeInCalStr === 'true' || includeInCalStr === '1' || includeInCalStr === 'si' || includeInCalStr === 'yes';
+      const cliente = getVal(['cliente', 'nombrecompleto', 'nombre', 'socio', 'arrendatario']);
+      const email = getVal(['email', 'correo', 'mail']) || 'cliente@jmasociados.com';
+      const docTypeRaw = getVal(['documenttype', 'tipodocumento', 'tipo']).toUpperCase();
+      const documentType: 'CI' | 'RG' | 'Pasaporte' = (docTypeRaw === 'RG' || docTypeRaw === 'PASAPORTE') ? (docTypeRaw as any) : 'CI';
+      
+      const salida = getVal(['inicio', 'salida', 'desde', 'start', 'fecha', 'fechadesalida']);
+      const entrega = getVal(['fin', 'entrega', 'hasta', 'end', 'fechadeentrega']);
+      const auto = getVal(['auto', 'vehiculo', 'alquilado', 'unidad', 'modelo']);
+      const totalStr = getVal(['total', 'monto', 'precio', 'valor', 'totalbrl']);
+      
+      const totalNum = parseSheetAmount(totalStr);
 
       return {
-        id: getVal(['id', 'reserva', 'uuid']) || `SHEET-${index}-${Date.now()}`,
-        cliente: getVal(['cliente', 'nombre', 'name']) || 'Cliente VIP',
-        ci: getVal(['ci', 'documento', 'id']) || 'N/A',
-        celular: getVal(['celular', 'whatsapp', 'phone']) || 'N/A',
-        auto: getVal(['auto', 'vehculo', 'vehicle']).toLowerCase() || 'unidad',
-        inicio: getVal(['inicio', 'desde', 'start', 'fecha']),
-        fin: getVal(['fin', 'hasta', 'end']) || getVal(['inicio', 'desde', 'fecha']),
-        total: parseFloat(getVal(['total', 'monto', 'price']).replace(/[^0-9.]/g, '')) || 0,
-        status: (getVal(['status', 'estado']) as any) || 'Confirmed',
-        admissionStatus: 'Approved',
-        includeInCalendar: includeInCalendar
+        id: `CLOUD-R98-${index}-${Date.now()}`,
+        cliente: cliente || 'Socio Externo',
+        email: email,
+        ci: 'SINCRO-NUBE',
+        documentType: documentType,
+        celular: '---',
+        auto: auto || 'Unidad No Definida',
+        inicio: salida,
+        fin: entrega || salida,
+        total: totalNum,
+        status: 'Confirmed',
+        includeInCalendar: true
       };
-    }).filter(r => r.inicio);
+    }).filter(r => r.inicio && r.auto && r.auto !== 'Unidad No Definida');
   } catch (error) {
     clearTimeout(timeoutId);
-    console.error("Error al leer Google Sheet:", error);
     return null;
   }
 };
 
 export const saveReservationToSheet = async (res: Reservation): Promise<boolean> => {
-  if (!GOOGLE_SHEET_WEBAPP_URL || GOOGLE_SHEET_WEBAPP_URL.includes('XXXXX')) {
-    console.warn("URL de WebApp no configurada para guardado persistente.");
-    return false;
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-
+  if (!GOOGLE_SHEET_WEBAPP_URL || GOOGLE_SHEET_WEBAPP_URL.includes('XXXXX')) return false;
   try {
     await fetch(GOOGLE_SHEET_WEBAPP_URL, {
       method: 'POST',
       mode: 'no-cors',
-      body: JSON.stringify(res),
-      signal: controller.signal
+      body: JSON.stringify(res)
     });
-    clearTimeout(timeoutId);
     return true;
   } catch (error) {
-    clearTimeout(timeoutId);
-    console.error("Error al guardar en Google Sheet:", error);
     return false;
   }
 };
