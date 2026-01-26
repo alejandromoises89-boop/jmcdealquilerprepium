@@ -6,7 +6,7 @@ import {
   X, ChevronRight, Upload, 
   Check, User as UserIcon, 
   ChevronLeft, Car, Calendar, Smartphone, CreditCard, Copy, 
-  QrCode, CheckCircle2, ShieldCheck, Mail, FileText, PenTool, ExternalLink, MessageCircle
+  QrCode, CheckCircle2, ShieldCheck, Mail, FileText, PenTool, ExternalLink, MessageCircle, AlertTriangle
 } from 'lucide-react';
 
 interface BookingModalProps {
@@ -53,7 +53,6 @@ const BookingModal: React.FC<BookingModalProps> = ({ vehicle, exchangeRate, rese
     if (isNaN(start.getTime()) || isNaN(end.getTime())) return { days: 1, fullTotalBRL: vehicle.precio };
     const diffInHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
     const days = Math.max(1, Math.ceil(diffInHours / 24));
-    // Se mantiene el precio con decimales exactos
     return { days, fullTotalBRL: parseFloat((days * vehicle.precio).toFixed(2)) };
   }, [formData.inicio, formData.horaIni, formData.fin, formData.horaFin, vehicle.precio]);
 
@@ -302,31 +301,34 @@ const BookingModal: React.FC<BookingModalProps> = ({ vehicle, exchangeRate, rese
              <div className="space-y-6 animate-slideUp text-center">
                 <div className="flex bg-gray-50 dark:bg-dark-elevated p-1 rounded-2xl border dark:border-white/5 gap-1 mb-6">
                    {['Pix', 'Transfer'].map(m => (
-                     <button key={m} onClick={() => setFormData({...formData, payMethod: m as any})} className={`flex-1 py-3 rounded-xl text-[9px] font-robust transition-all ${formData.payMethod === m ? 'bg-bordeaux-950 text-white shadow-lg' : 'text-gray-400'}`}>{m.toUpperCase()}</button>
+                     <button key={m} onClick={() => setFormData({...formData, payMethod: m as any})} className={`flex-1 py-3 rounded-xl text-[9px] font-robust transition-all ${formData.payMethod === m ? 'bg-bordeaux-950 text-white shadow-lg' : 'text-gray-400'}`}>{m === 'Pix' ? 'PIX (SANTANDER)' : 'TRANSF. (UENO)'}</button>
                    ))}
                 </div>
 
                 <div className="bg-white dark:bg-dark-card p-8 rounded-[2.5rem] border-2 border-gold/20 space-y-6 relative overflow-hidden">
                    <div className="absolute top-0 right-0 w-24 h-24 bg-gold/5 rounded-full -mr-12 -mt-12"></div>
-                   <p className="text-[9px] font-black text-gold uppercase tracking-widest">Datos de Transferencia</p>
+                   <p className="text-[9px] font-black text-gold uppercase tracking-widest">Canal de Pago Directo</p>
                    <div className="space-y-4 text-left">
                       <div className="flex justify-between items-center bg-gray-50 dark:bg-dark-base p-4 rounded-xl">
-                        <div><p className="text-[7px] font-bold text-gray-400 uppercase">Clave PIX / Cuenta</p><p className="text-xs font-robust dark:text-white tracking-widest">{formData.payMethod === 'Pix' ? t.payData.pix : t.payData.acc}</p></div>
-                        <button onClick={() => { navigator.clipboard.writeText(formData.payMethod === 'Pix' ? t.payData.pix : t.payData.acc); alert(t.copied); }} className="p-2 text-gold"><Copy size={16}/></button>
+                        <div>
+                          <p className="text-[7px] font-bold text-gray-400 uppercase">{formData.payMethod === 'Pix' ? 'Clave PIX (Santander)' : 'Número de Cuenta (ueno Bank)'}</p>
+                          <p className="text-xs font-robust dark:text-white tracking-widest">{formData.payMethod === 'Pix' ? '24510861818' : '1008110'}</p>
+                        </div>
+                        <button onClick={() => { navigator.clipboard.writeText(formData.payMethod === 'Pix' ? '24510861818' : '1008110'); alert(t.copied); }} className="p-2 text-gold"><Copy size={16}/></button>
                       </div>
                       <div className="flex justify-between items-center p-1 px-4">
-                        <div><p className="text-[7px] font-bold text-gray-400 uppercase">Banco</p><p className="text-xs font-robust dark:text-white">{t.payData.bank}</p></div>
-                        <div className="text-right"><p className="text-[7px] font-bold text-gray-400 uppercase">Titular</p><p className="text-xs font-robust dark:text-white">{t.payData.holder}</p></div>
+                        <div><p className="text-[7px] font-bold text-gray-400 uppercase">Banco</p><p className="text-xs font-robust dark:text-white">{formData.payMethod === 'Pix' ? 'Banco Santander (Brasil)' : 'ueno Bank (Paraguay)'}</p></div>
+                        <div className="text-right"><p className="text-[7px] font-bold text-gray-400 uppercase">Titular</p><p className="text-xs font-robust dark:text-white">Marina Baez</p></div>
                       </div>
                    </div>
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-[8px] font-black text-gold uppercase tracking-widest ml-1">Adjuntar Comprobante de Pago</p>
+                  <p className="text-[8px] font-black text-gold uppercase tracking-widest ml-1">Adjuntar Comprobante de Operación</p>
                   <label className="flex flex-col items-center justify-center gap-3 w-full h-32 border-2 border-dashed border-gold/20 rounded-3xl bg-gray-50 dark:bg-dark-elevated cursor-pointer hover:bg-gold/5 transition-all">
                     <input type="file" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onloadend = () => setReceiptBase64(r.result as string); r.readAsDataURL(f); } }} />
                     {receiptBase64 ? <CheckCircle2 size={30} className="text-green-500" /> : <Upload size={30} className="text-gray-300" />}
-                    <span className="text-[8px] font-black text-gray-400 uppercase">Comprobante de Depósito</span>
+                    <span className="text-[8px] font-black text-gray-400 uppercase">Cargar Foto de Comprobante</span>
                   </label>
                 </div>
              </div>
@@ -363,21 +365,28 @@ const BookingModal: React.FC<BookingModalProps> = ({ vehicle, exchangeRate, rese
              </div>
            )}
 
-           {/* PASO 6: ÉXITO / VALIDACIÓN */}
+           {/* PASO 6: ÉXITO / VALIDACIÓN PERSONALIZADA */}
            {step === 6 && (
-             <div className="animate-slideUp flex flex-col items-center text-center gap-8 py-10">
-                <div className="w-24 h-24 bg-gold/10 rounded-[2.5rem] flex items-center justify-center text-gold border-2 border-gold/30 shadow-2xl animate-pulse">
+             <div className="animate-slideUp flex flex-col items-center text-center gap-8 py-6">
+                <div className="w-24 h-24 bg-green-500/10 rounded-[2.5rem] flex items-center justify-center text-green-500 border-2 border-green-500/30 shadow-2xl animate-pulse">
                    <Check size={48} />
                 </div>
                 <div className="space-y-4">
-                   <h3 className="text-2xl font-robust font-speed text-bordeaux-950 dark:text-white italic uppercase">Protocolo Iniciado</h3>
-                   <div className="p-6 bg-gray-50 dark:bg-dark-card rounded-3xl border dark:border-white/5 space-y-4">
-                      <p className="text-xs font-bold text-gray-500 dark:text-gray-400 leading-relaxed uppercase tracking-tight">Hemos registrado su solicitud con ID <span className="text-bordeaux-800 dark:text-gold">{reservationId}</span>.</p>
-                      <p className="text-[10px] font-black text-bordeaux-950 dark:text-white uppercase">Sujeto a validación del comprobante y documentos por nuestra central.</p>
-                      <p className="text-[9px] font-bold text-gray-400 italic">Se ha enviado una copia del registro a su correo: {formData.email}</p>
+                   <h3 className="text-2xl font-robust font-speed text-bordeaux-950 dark:text-white italic uppercase">Solicitud Recibida</h3>
+                   <div className="p-6 bg-gray-50 dark:bg-dark-card rounded-[2rem] border dark:border-white/5 space-y-5">
+                      <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 leading-relaxed uppercase">Su reserva con ID <span className="text-bordeaux-800 dark:text-gold font-black">{reservationId}</span> está siendo procesada por nuestra central.</p>
+                      
+                      <div className="p-4 bg-red-600/5 rounded-2xl border border-red-600/20 text-left">
+                        <p className="text-[9px] font-black text-red-600 uppercase flex items-center gap-2 mb-2"><AlertTriangle size={12}/> Aviso Contractual Crítico</p>
+                        <p className="text-[8.5px] font-bold text-gray-600 dark:text-gray-300 leading-tight uppercase">
+                          El retiro y entrega del vehículo debe realizarse estrictamente en el horario pactado (08:00 - 17:00). Los retrasos sin aviso previo están sujetos a una multa de <span className="text-red-600 font-black">1 (una) diaria completa</span> según contrato.
+                        </p>
+                      </div>
+                      
+                      <p className="text-[9px] font-bold text-gray-400 italic">Un agente JM validará sus documentos y comprobante en breve.</p>
                    </div>
                 </div>
-                <button onClick={onClose} className="w-full py-5 border-2 border-gold/20 text-gold rounded-[2rem] font-robust text-[10px] uppercase tracking-widest hover:bg-gold hover:text-white transition-all">Volver a Flota VIP</button>
+                <button onClick={onClose} className="w-full py-5 bordeaux-gradient text-white rounded-[2rem] font-robust text-[10px] uppercase tracking-widest shadow-xl">Finalizar Protocolo</button>
              </div>
            )}
         </div>

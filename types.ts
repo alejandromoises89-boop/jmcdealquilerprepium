@@ -70,6 +70,7 @@ export interface Reservation {
   comprobante?: string;
   driverLicense?: string;
   signature?: string;
+  manualContract?: string; // New field for manual uploads
   includeInCalendar?: boolean;
   deliveryLog?: ChecklistLog;
   receptionLog?: ChecklistLog;

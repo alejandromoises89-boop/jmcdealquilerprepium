@@ -9,7 +9,7 @@ import VehicleGrid from './components/VehicleGrid';
 import AdminPanel from './components/AdminPanel';
 import LocationSection from './components/LocationSection';
 import SupportForm from './components/SupportForm';
-import { RefreshCw, BellRing, X, Landmark, Lock, MapPin, Phone, MessageCircle, ShieldCheck, Loader2 } from 'lucide-react';
+import { RefreshCw, BellRing, X, Landmark, Lock, MapPin, Phone, MessageCircle, ShieldCheck, Loader2, CloudUpload } from 'lucide-react';
 
 interface AppNotification {
   id: string;
@@ -42,10 +42,10 @@ const App: React.FC = () => {
 
   const [exchangeRate, setExchangeRate] = useState<number>(1550);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSavingCloud, setIsSavingCloud] = useState(false);
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => localStorage.getItem('jm_admin_unlocked') === 'true');
   const [showPinPrompt, setShowPinPrompt] = useState(false);
   const [pinValue, setPinValue] = useState("");
-  const [appNotifications, setAppNotifications] = useState<AppNotification[]>([]);
 
   useEffect(() => {
     localStorage.setItem('jm_flota', JSON.stringify(flota));
@@ -77,6 +77,25 @@ const App: React.FC = () => {
       console.error("Sync error:", err);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  // Función central para añadir reservas con guardado triple
+  const handleNewReservation = async (newRes: Reservation) => {
+    // 1. Guardado Local Inmediato
+    setReservations(prev => [newRes, ...prev]);
+    
+    // 2. Intento de guardado en la Nube (Google Sheets)
+    setIsSavingCloud(true);
+    try {
+      const success = await saveReservationToSheet(newRes);
+      if (success) {
+        console.log("Sincronización con Nube Exitosa");
+      }
+    } catch (error) {
+      console.error("Error al guardar en la nube:", error);
+    } finally {
+      setIsSavingCloud(false);
     }
   };
 
@@ -123,10 +142,19 @@ const App: React.FC = () => {
         onShowContact={() => setShowContactModal(true)}
       />
 
-      {isSyncing && (
-        <div className="fixed top-28 right-6 z-[130] flex items-center gap-4 bg-white/95 dark:bg-dark-card/95 text-bordeaux-950 px-6 py-3 rounded-2xl shadow-xl border border-gold/20">
-          <Loader2 className="animate-spin text-gold" size={16} />
-          <span className="text-[9px] font-black uppercase tracking-widest">Sincronizando Nube</span>
+      {/* Indicadores de Sincronización */}
+      {(isSyncing || isSavingCloud) && (
+        <div className="fixed top-28 right-6 z-[130] flex items-center gap-4 bg-white/95 dark:bg-dark-card/95 text-bordeaux-950 px-6 py-4 rounded-[2rem] shadow-2xl border border-gold/20 animate-slideUp">
+          <div className="relative">
+            <RefreshCw className={`text-gold ${isSyncing || isSavingCloud ? 'animate-spin' : ''}`} size={18} />
+            {isSavingCloud && <CloudUpload className="absolute -top-1 -right-1 text-bordeaux-800 animate-bounce" size={10} />}
+          </div>
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-widest block leading-none">
+              {isSavingCloud ? 'Subiendo a Nube' : 'Sincronizando'}
+            </span>
+            <span className="text-[7px] text-gray-400 font-bold uppercase mt-1 block">JM Protocolo Seguro</span>
+          </div>
         </div>
       )}
 
@@ -148,10 +176,34 @@ const App: React.FC = () => {
       )}
 
       <main className="max-w-7xl mx-auto px-6 pt-28 pb-40">
-        {activeTab === 'reservas' && <VehicleGrid flota={flota} exchangeRate={exchangeRate} reservations={reservations} onAddReservation={res => setReservations([res, ...reservations])} language={language} />}
+        {activeTab === 'reservas' && (
+          <VehicleGrid 
+            flota={flota} 
+            exchangeRate={exchangeRate} 
+            reservations={reservations} 
+            onAddReservation={handleNewReservation} 
+            language={language} 
+          />
+        )}
         {activeTab === 'ubicacion' && <LocationSection />}
         {activeTab === 'asistencia' && <SupportForm flota={flota} onSubmit={() => alert("Asistencia enviada.")} />}
-        {activeTab === 'admin' && isAdminUnlocked && <AdminPanel flota={flota} setFlota={setFlota} reservations={reservations} setReservations={setReservations} onDeleteReservation={id => setReservations(reservations.filter(r => r.id !== id))} gastos={[]} setGastos={()=>{}} exchangeRate={exchangeRate} onSyncSheet={syncDataFromSheet} isSyncing={isSyncing} breakdowns={[]} setBreakdowns={()=>{}} />}
+        {activeTab === 'admin' && isAdminUnlocked && (
+          <AdminPanel 
+            flota={flota} 
+            setFlota={setFlota} 
+            reservations={reservations} 
+            setReservations={setReservations} 
+            onDeleteReservation={id => setReservations(reservations.filter(r => r.id !== id))} 
+            onAddReservation={handleNewReservation} // Nueva prop para guardado sincronizado
+            gastos={[]} 
+            setGastos={()=>{}} 
+            exchangeRate={exchangeRate} 
+            onSyncSheet={syncDataFromSheet} 
+            isSyncing={isSyncing} 
+            breakdowns={[]} 
+            setBreakdowns={()=>{}} 
+          />
+        )}
       </main>
     </div>
   );

@@ -1,12 +1,13 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Vehicle, Reservation, Gasto, Breakdown, ChecklistLog } from '../types';
 import { 
   RefreshCw, Car, ShieldCheck, Search, 
   Trash2, X, Calendar, PieChart, 
-  Save, Settings2, Gauge, ShieldAlert, CreditCard, FileText, Plus, Edit3,
-  CheckCircle2, AlertCircle, Wrench, Droplets, Filter, Disc, ChevronRight, Sparkles,
-  ClipboardCheck, LogOut, LogIn, Fuel, Brush, UserCheck, PackageOpen, ImageIcon, Type, Clock, ArrowRight
+  Save, Settings2, Gauge, CreditCard, FileText, 
+  CheckCircle2, Wrench, Droplets, Disc, Sparkles,
+  LogOut, LogIn, Fuel, Brush, UserCheck, PackageOpen, ImageIcon, Type, ArrowRight, Upload, Download, Eye, Plus,
+  Filter
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, 
@@ -18,6 +19,7 @@ interface AdminPanelProps {
   setFlota: (flota: Vehicle[]) => void;
   reservations: Reservation[];
   setReservations: (res: Reservation[]) => void;
+  onAddReservation?: (res: Reservation) => void; // Nueva prop
   onDeleteReservation?: (id: string) => void;
   gastos: Gasto[];
   setGastos: (gastos: Gasto[]) => void;
@@ -29,7 +31,7 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ 
-  flota, setFlota, reservations, setReservations, onDeleteReservation, exchangeRate, onSyncSheet, isSyncing
+  flota, setFlota, reservations, setReservations, onAddReservation, onDeleteReservation, exchangeRate, onSyncSheet, isSyncing
 }) => {
   const [activeSection, setActiveSection] = useState<'finanzas' | 'flota' | 'reservas' | 'contratos'>('finanzas');
   const [searchTerm, setSearchTerm] = useState('');
@@ -37,6 +39,57 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   
   const [opModal, setOpModal] = useState<{resId: string, type: 'delivery' | 'reception'} | null>(null);
   const [opLog, setOpLog] = useState<ChecklistLog | null>(null);
+
+  // State for manual contract form
+  const [manualForm, setManualForm] = useState({
+    cliente: '',
+    auto: '',
+    inicio: new Date().toISOString().split('T')[0],
+    horaIni: '08:00',
+    fin: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    horaFin: '17:00',
+    total: 0
+  });
+
+  const handleSaveManualContract = () => {
+    if (!manualForm.cliente || !manualForm.auto || !manualForm.inicio || !manualForm.fin) {
+      alert("Por favor complete todos los campos del contrato.");
+      return;
+    }
+
+    const newRes: Reservation = {
+      id: `MANUAL-${Date.now()}`,
+      cliente: manualForm.cliente.toUpperCase(),
+      email: 'manual@jmasociados.com',
+      ci: 'CARGA-MANUAL',
+      documentType: 'CI',
+      celular: '---',
+      auto: manualForm.auto,
+      inicio: `${manualForm.inicio} ${manualForm.horaIni}`,
+      fin: `${manualForm.fin} ${manualForm.horaFin}`,
+      total: manualForm.total,
+      status: 'Confirmed',
+      includeInCalendar: true
+    };
+
+    // Usamos la función de guardado sincronizado pasada desde App.tsx
+    if (onAddReservation) {
+      onAddReservation(newRes);
+    } else {
+      setReservations([newRes, ...reservations]);
+    }
+
+    setManualForm({
+      cliente: '',
+      auto: '',
+      inicio: new Date().toISOString().split('T')[0],
+      horaIni: '08:00',
+      fin: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+      horaFin: '17:00',
+      total: 0
+    });
+    alert("Contrato manual guardado. Las fechas han sido bloqueadas y se está sincronizando con la Nube.");
+  };
 
   const stats = useMemo(() => {
     const list = reservations || [];
@@ -107,22 +160,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     }));
   }, [reservations]);
 
-  const safeParseDate = (s: string): Date => {
-    if (!s) return new Date();
-    try {
-      const datePart = s.split(' ')[0];
-      const parts = datePart.split(/[/-]/);
-      let d, m, y;
-      if (parts.length !== 3) return new Date();
-      if (parts[0].length === 4) { y = parseInt(parts[0]); m = parseInt(parts[1]) - 1; d = parseInt(parts[2]); }
-      else { d = parseInt(parts[0]); m = parseInt(parts[1]) - 1; y = parseInt(parts[2]); if (y < 100) y += 2000; }
-      const dt = new Date(y, m, d);
-      return isNaN(dt.getTime()) ? new Date() : dt;
-    } catch (e) {
-      return new Date();
-    }
-  };
-
   return (
     <div className="space-y-6 animate-slideUp pb-24">
       {/* HEADER ADMIN */}
@@ -142,6 +179,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           { id: 'finanzas', label: 'BALANCE', icon: PieChart },
           { id: 'flota', label: 'FICHA TÉCNICA', icon: Car },
           { id: 'reservas', label: 'LIBRO VIP', icon: Calendar },
+          { id: 'contratos', label: 'CONTRATOS', icon: FileText },
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveSection(tab.id as any)} 
             className={`flex items-center gap-2 px-5 py-3 rounded-xl text-[9px] font-robust transition-all whitespace-nowrap ${
@@ -151,6 +189,66 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           </button>
         ))}
       </div>
+
+      {/* SECCIÓN: CONTRATOS (SÓLO CARGA MANUAL) */}
+      {activeSection === 'contratos' && (
+        <div className="space-y-8 animate-fadeIn">
+          {/* FORMULARIO DE CARGA MANUAL - TERMINAL DE BLOQUEO */}
+          <div className="bg-white dark:bg-dark-card p-8 rounded-[3rem] border-2 border-gold/20 shadow-xl space-y-8">
+             <div className="flex items-center gap-4 border-b dark:border-white/5 pb-6">
+                <div className="p-4 bg-gold/10 text-gold rounded-[1.5rem]"><Plus size={32}/></div>
+                <div>
+                   <h3 className="text-2xl font-robust text-bordeaux-950 dark:text-white uppercase italic leading-none">Terminal de Bloqueo JM</h3>
+                   <p className="text-[10px] font-black text-gold uppercase tracking-[0.3em] mt-2">Carga manual de contratos para reserva inmediata de unidades</p>
+                </div>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <div className="space-y-2">
+                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Arrendatario (Socio)</label>
+                   <input type="text" placeholder="NOMBRE COMPLETO" value={manualForm.cliente} onChange={e => setManualForm({...manualForm, cliente: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-5 text-sm font-bold outline-none border dark:border-white/5 focus:border-gold" />
+                </div>
+                <div className="space-y-2">
+                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Unidad (Vehículo)</label>
+                   <select value={manualForm.auto} onChange={e => setManualForm({...manualForm, auto: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-5 text-sm font-bold outline-none border dark:border-white/5 focus:border-gold">
+                      <option value="">SELECCIONE UNIDAD...</option>
+                      {flota.map(v => <option key={v.id} value={v.nombre}>{v.nombre} ({v.placa})</option>)}
+                   </select>
+                </div>
+                <div className="space-y-2">
+                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Inversión Total (BRL)</label>
+                   <input type="number" placeholder="0.00" value={manualForm.total} onChange={e => setManualForm({...manualForm, total: parseFloat(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-5 text-sm font-bold outline-none border dark:border-white/5 focus:border-gold" />
+                </div>
+                <div className="space-y-2">
+                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Fecha Inicio</label>
+                   <div className="flex gap-2">
+                      <input type="date" value={manualForm.inicio} onChange={e => setManualForm({...manualForm, inicio: e.target.value})} className="flex-1 bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-4 py-5 text-xs font-bold outline-none border dark:border-white/5" />
+                      <input type="time" value={manualForm.horaIni} onChange={e => setManualForm({...manualForm, horaIni: e.target.value})} className="w-28 bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-2 py-5 text-xs font-bold outline-none border dark:border-white/5" />
+                   </div>
+                </div>
+                <div className="space-y-2">
+                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Fecha Fin</label>
+                   <div className="flex gap-2">
+                      <input type="date" value={manualForm.fin} onChange={e => setManualForm({...manualForm, fin: e.target.value})} className="flex-1 bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-4 py-5 text-xs font-bold outline-none border dark:border-white/5" />
+                      <input type="time" value={manualForm.horaFin} onChange={e => setManualForm({...manualForm, horaFin: e.target.value})} className="w-28 bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-2 py-5 text-xs font-bold outline-none border dark:border-white/5" />
+                   </div>
+                </div>
+                <div className="flex items-end">
+                   <button onClick={handleSaveManualContract} className="w-full bordeaux-gradient text-white py-5 rounded-[2rem] font-robust text-[11px] uppercase tracking-[0.4em] shadow-xl flex items-center justify-center gap-3 transition-all active:scale-95">
+                      <Save size={18}/> Guardar y Bloquear
+                   </button>
+                </div>
+             </div>
+
+             <div className="bg-gold/5 p-6 rounded-[2rem] border border-gold/20">
+                <p className="text-[9px] font-black text-gold uppercase mb-3 flex items-center gap-2"><ShieldCheck size={14}/> Protocolo de Bloqueo Maestro</p>
+                <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 leading-relaxed uppercase">
+                  Al guardar, se crea una reserva confirmada en el sistema local y se sincroniza con la nube. Esta unidad quedará marcada como "No Disponible" en todos los calendarios globales.
+                </p>
+             </div>
+          </div>
+        </div>
+      )}
 
       {/* SECCIÓN: RESERVAS (LIBRO VIP) */}
       {activeSection === 'reservas' && (
@@ -170,11 +268,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
               <tbody className="divide-y divide-gray-50 dark:divide-white/5">
                 {(reservations || []).filter(r => r.cliente.toLowerCase().includes(searchTerm.toLowerCase())).map(res => {
                   const isCloud = res.id.startsWith('CLOUD-R98-');
+                  const isManual = res.id.startsWith('MANUAL-');
                   return (
                     <tr key={res.id} className="hover:bg-gray-50 dark:hover:bg-gold/5 transition-all">
                       <td className="py-4 px-5">
                         <div className="flex items-center gap-2">
-                          {isCloud && <div className="w-2.5 h-2.5 bg-gold rounded-full shadow-[0_0_8px_rgba(212,175,55,1)]"></div>}
+                          {(isCloud || isManual) && <div className={`w-2.5 h-2.5 ${isManual ? 'bg-bordeaux-800' : 'bg-gold'} rounded-full shadow-sm`}></div>}
                           <div>
                               <p className="font-robust text-[11px] uppercase dark:text-white leading-none mb-1">{res.cliente}</p>
                               <p className="text-[8px] text-gray-400 font-bold uppercase tracking-widest">{res.auto}</p>
