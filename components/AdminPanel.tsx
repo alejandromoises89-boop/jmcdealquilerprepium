@@ -7,10 +7,10 @@ import {
   ArrowRight, PieChart as PieChartIcon, BarChart3, ClipboardList, 
   Car, MessageCircle, FileSpreadsheet, ShieldCheck, 
   Edit3, X, Settings, User, CreditCard, Check, AlertCircle, Bell,
-  Sparkles, Bot, Video, MapPin, Globe, Loader2, Play
+  Sparkles, Bot, Video, MapPin, Globe, Loader2, Play, Image as ImageIcon
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 interface AdminPanelProps {
   flota: Vehicle[];
@@ -26,6 +26,11 @@ interface AdminPanelProps {
   setVencimientos: (records: ExpirationRecord[]) => void;
   exchangeRate: number;
   language?: string;
+  onSyncSheet?: () => void;
+  isSyncing?: boolean;
+  breakdowns?: any[];
+  setBreakdowns?: (b: any[]) => void;
+  onAddReservation?: (res: Reservation) => void;
 }
 
 // --- AI & CHAT INTERFACES ---
@@ -40,7 +45,7 @@ interface ChatMessage {
 const NotificationCenter: React.FC<{ alerts: string[] }> = ({ alerts }) => {
   if (alerts.length === 0) return null;
   return (
-    <div className="fixed top-24 right-6 z-[150] space-y-3 animate-slideUp pointer-events-none">
+    <div className="fixed top-28 right-6 z-[140] space-y-3 animate-slideUp pointer-events-none">
       {alerts.map((alert, idx) => (
         <div key={idx} className="bg-white/95 dark:bg-dark-card/95 backdrop-blur-md p-4 rounded-2xl shadow-2xl border-l-4 border-rose-500 flex items-start gap-3 w-80 pointer-events-auto">
           <div className="bg-rose-100 dark:bg-rose-900/30 p-2 rounded-full text-rose-600">
@@ -64,10 +69,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'finanzas' | 'contratos' | 'taller' | 'checklists' | 'ai_studio'>('finanzas');
   const [finanzasFilter, setFinanzasFilter] = useState({ start: '', end: '', vehicle: '' });
   const [showManualBooking, setShowManualBooking] = useState(false);
-  const [selectedContract, setSelectedContract] = useState<Reservation | null>(null);
   const [manualRes, setManualRes] = useState({ cliente: '', auto: '', inicio: '', fin: '', total: 0 });
   const [notifications, setNotifications] = useState<string[]>([]);
-  const [showNewChecklist, setShowNewChecklist] = useState<string | null>(null); // vehicleId for modal
+  const [showNewChecklist, setShowNewChecklist] = useState<string | null>(null);
 
   // AI STUDIO STATE
   const [aiTab, setAiTab] = useState<'chat' | 'veo'>('chat');
@@ -107,11 +111,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     // Monthly data for Area Chart
     const monthlyData = new Map();
     filteredRes.forEach(r => {
+      if(!r.inicio) return;
       const month = r.inicio.substring(0, 7); // YYYY-MM
       if (!monthlyData.has(month)) monthlyData.set(month, { name: month, ing: 0, gas: 0 });
       monthlyData.get(month).ing += r.total;
     });
     filteredGastos.forEach(g => {
+       if(!g.fecha) return;
        const month = g.fecha.substring(0, 7);
        if (!monthlyData.has(month)) monthlyData.set(month, { name: month, ing: 0, gas: 0 });
        monthlyData.get(month).gas += g.monto;
@@ -185,7 +191,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         contents: userMsg,
         config: {
           tools: tools.length > 0 ? tools : undefined,
-          systemInstruction: "You are an AI assistant for 'JM Alquiler de Vehículos', a premium car rental agency in Paraguay. Answer professionally.",
+          systemInstruction: "Eres un asistente ejecutivo para 'JM Alquiler de Vehículos'. Responde de forma breve, profesional y estratégica.",
         }
       });
 
@@ -197,16 +203,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
         if (chunks) {
           chunks.forEach((c: any) => {
-            if (c.web?.uri) sources.push({ uri: c.web.uri, title: c.web.title || 'Source' });
+            if (c.web?.uri) sources.push({ uri: c.web.uri, title: c.web.title || 'Fuente Externa' });
           });
         }
       } else if (groundingMode === 'maps') {
-        // Maps logic if needed for extracting snippets
         const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
          if (chunks) {
           chunks.forEach((c: any) => {
-             // Extract relevant map links if available
-             if(c.web?.uri) sources.push({ uri: c.web.uri, title: "Google Maps Result"});
+             if(c.web?.uri) sources.push({ uri: c.web.uri, title: "Google Maps"});
           });
         }
       }
@@ -215,7 +219,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
     } catch (error) {
       console.error(error);
-      setChatMessages(prev => [...prev, { role: 'model', text: "Error connecting to Gemini Intelligence.", isError: true }]);
+      setChatMessages(prev => [...prev, { role: 'model', text: "Error de conexión con Inteligencia Artificial. Verifique API Key.", isError: true }]);
     } finally {
       setIsChatLoading(false);
     }
@@ -223,20 +227,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleGenerateVideo = async () => {
     if (!veoImage) {
-      alert("Please upload an image first.");
+      alert("Por favor cargue una imagen de referencia.");
       return;
     }
     setIsVeoGenerating(true);
     setGeneratedVideoUrl(null);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-      
-      // Remove data URL prefix for API
       const base64Image = veoImage.split(',')[1];
       
       let operation = await ai.models.generateVideos({
         model: 'veo-3.1-fast-generate-preview',
-        prompt: veoPrompt || "Animate this car driving in a futuristic city",
+        prompt: veoPrompt || "Cinematic shot of this car driving on a coastal road during sunset, 4k, highly detailed",
         image: {
            imageBytes: base64Image,
            mimeType: 'image/png' 
@@ -248,7 +250,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         }
       });
 
-      // Polling loop
       while (!operation.done) {
         await new Promise(resolve => setTimeout(resolve, 5000));
         operation = await ai.operations.getVideosOperation({ operation: operation });
@@ -256,14 +257,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
       const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
       if (videoUri) {
-        // Fetch actual bytes via proxy or signed link logic (simulated here since we need key)
         const finalUrl = `${videoUri}&key=${process.env.API_KEY}`;
         setGeneratedVideoUrl(finalUrl);
       }
 
     } catch (error) {
       console.error(error);
-      alert("Error generating video: " + error);
+      alert("Error generando video: " + error);
     } finally {
       setIsVeoGenerating(false);
     }
@@ -278,7 +278,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-
   const COLORS = ['#800000', '#D4AF37', '#10b981', '#3b82f6'];
 
   return (
@@ -288,13 +287,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* HEADER */}
       <div className="px-4 flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-robust text-bordeaux-950 dark:text-white italic tracking-tighter leading-none">TERMINAL MASTER v3.7</h2>
+          <h2 className="text-3xl font-robust text-bordeaux-950 dark:text-white italic tracking-tighter leading-none">TERMINAL MASTER v3.8</h2>
           <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em] mt-2 flex items-center gap-2">
             <ShieldCheck size={14}/> Centro de Inteligencia Operativa
           </p>
         </div>
         <div className="flex gap-2 relative">
-           <button onClick={() => window.print()} className="p-4 bg-gray-950 text-white rounded-[1.5rem] shadow-2xl"><Printer size={20}/></button>
+           <button onClick={() => window.print()} className="p-4 bg-gray-950 text-white rounded-[1.5rem] shadow-2xl hover:scale-105 transition-transform"><Printer size={20}/></button>
            {notifications.length > 0 && (
              <span className="absolute -top-2 -right-2 bg-rose-600 text-white text-[9px] font-black w-6 h-6 rounded-full flex items-center justify-center animate-bounce shadow-lg">{notifications.length}</span>
            )}
@@ -325,24 +324,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         <div className="space-y-8 animate-fadeIn px-2">
           {/* Executive Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-             <div className="bg-gradient-to-br from-white to-gray-50 dark:from-dark-card dark:to-dark-elevated p-8 rounded-[3rem] border-l-8 border-emerald-500 shadow-xl group hover:shadow-2xl transition-all">
-                <div className="flex justify-between items-start mb-4">
+             <div className="bg-gradient-to-br from-white to-emerald-50/50 dark:from-dark-card dark:to-emerald-900/10 p-8 rounded-[3rem] border-l-8 border-emerald-500 shadow-xl group hover:shadow-2xl transition-all relative overflow-hidden">
+                <div className="flex justify-between items-start mb-4 relative z-10">
                    <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 rounded-2xl"><TrendingUp size={24}/></div>
-                   <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Este Periodo</span>
+                   <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">INGRESOS</span>
                 </div>
-                <p className="text-[9px] font-black text-emerald-600 uppercase mb-2">Ingresos Totales</p>
-                <h3 className="text-4xl font-robust dark:text-white italic">R$ {stats.income.toLocaleString()}</h3>
-                <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 italic border-t border-gray-100 dark:border-white/5 pt-2">Gs. {(stats.income * exchangeRate).toLocaleString()}</p>
+                <h3 className="text-4xl font-robust dark:text-white italic relative z-10">R$ {stats.income.toLocaleString()}</h3>
+                <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 italic border-t border-gray-100 dark:border-white/5 pt-2 relative z-10">Gs. {(stats.income * exchangeRate).toLocaleString()}</p>
+                <TrendingUp className="absolute -bottom-4 -right-4 text-emerald-500/10 w-32 h-32" />
              </div>
              
-             <div className="bg-gradient-to-br from-white to-gray-50 dark:from-dark-card dark:to-dark-elevated p-8 rounded-[3rem] border-l-8 border-rose-500 shadow-xl group hover:shadow-2xl transition-all">
-                 <div className="flex justify-between items-start mb-4">
+             <div className="bg-gradient-to-br from-white to-rose-50/50 dark:from-dark-card dark:to-rose-900/10 p-8 rounded-[3rem] border-l-8 border-rose-500 shadow-xl group hover:shadow-2xl transition-all relative overflow-hidden">
+                 <div className="flex justify-between items-start mb-4 relative z-10">
                    <div className="p-3 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded-2xl"><TrendingDown size={24}/></div>
-                   <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Gastos Operativos</span>
+                   <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">EGRESOS</span>
                 </div>
-                <p className="text-[9px] font-black text-rose-600 uppercase mb-2">Egresos Totales</p>
-                <h3 className="text-4xl font-robust dark:text-white italic">R$ {stats.expense.toLocaleString()}</h3>
-                <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 italic border-t border-gray-100 dark:border-white/5 pt-2">Gs. {(stats.expense * exchangeRate).toLocaleString()}</p>
+                <h3 className="text-4xl font-robust dark:text-white italic relative z-10">R$ {stats.expense.toLocaleString()}</h3>
+                <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 italic border-t border-gray-100 dark:border-white/5 pt-2 relative z-10">Gs. {(stats.expense * exchangeRate).toLocaleString()}</p>
+                <TrendingDown className="absolute -bottom-4 -right-4 text-rose-500/10 w-32 h-32" />
              </div>
 
              <div className="bg-gradient-to-br from-bordeaux-950 to-bordeaux-900 p-8 rounded-[3rem] border-2 border-gold/20 shadow-xl relative overflow-hidden">
@@ -354,7 +353,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-             <div className="bg-white dark:bg-dark-card p-10 rounded-[3.5rem] shadow-xl h-[400px] border dark:border-white/5">
+             <div className="bg-white dark:bg-dark-card p-10 rounded-[3.5rem] shadow-xl h-[400px] border dark:border-white/5 relative">
                 <h4 className="text-[10px] font-black uppercase text-gray-400 mb-6 flex items-center gap-2"><BarChart3 size={16}/> Flujo de Caja (Tendencia)</h4>
                 <ResponsiveContainer width="100%" height="90%">
                    <AreaChart data={stats.areaData}>
@@ -396,7 +395,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       {activeTab === 'contratos' && (
         <div className="space-y-6 px-2 animate-fadeIn">
            <button onClick={() => setShowManualBooking(!showManualBooking)} className="w-full py-6 bg-gold/10 border-4 border-dashed border-gold text-gold rounded-[2.5rem] font-black text-[11px] uppercase tracking-[0.3em] flex items-center justify-center gap-4 hover:bg-gold/20 transition-all">
-              <UserPlus size={24}/> Nuevo Contrato Directo (Confirmar y Bloquear)
+              <UserPlus size={24}/> Nuevo Contrato Directo (Bloquear Agenda)
            </button>
 
            {showManualBooking && (
@@ -425,19 +424,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
              </form>
            )}
 
-           <div className="space-y-4">
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
              {reservations.map(r => (
-               <div key={r.id} onClick={() => setSelectedContract(r)} className="bg-white dark:bg-dark-card p-6 rounded-[2.5rem] border dark:border-white/5 flex justify-between items-center group hover:border-gold cursor-pointer transition-all">
+               <div key={r.id} className="bg-white dark:bg-dark-card p-6 rounded-[2.5rem] border dark:border-white/5 flex justify-between items-center group hover:border-gold cursor-pointer transition-all shadow-md">
                   <div className="flex items-center gap-4">
-                     <FileText size={20} className="text-bordeaux-800"/>
+                     <div className="w-12 h-12 bg-bordeaux-50 rounded-2xl flex items-center justify-center text-bordeaux-800"><FileText size={20}/></div>
                      <div>
                         <p className="text-sm font-black dark:text-white uppercase italic leading-none">{r.cliente}</p>
                         <p className="text-[9px] text-gray-400 font-bold mt-1 uppercase">{r.auto} | {r.inicio}</p>
                      </div>
                   </div>
                   <div className="text-right flex items-center gap-4">
-                     <p className="text-lg font-robust dark:text-white">R$ {r.total}</p>
-                     <button onClick={(e) => { e.stopPropagation(); onDeleteReservation?.(r.id); }} className="p-3 text-red-500 opacity-0 group-hover:opacity-100"><Trash2 size={16}/></button>
+                     <div>
+                       <p className="text-lg font-robust dark:text-white">R$ {r.total}</p>
+                       <span className={`px-3 py-0.5 rounded-full text-[7px] font-black uppercase ${r.status === 'Confirmed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{r.status}</span>
+                     </div>
+                     <button onClick={(e) => { e.stopPropagation(); onDeleteReservation?.(r.id); }} className="p-3 text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
                   </div>
                </div>
              ))}
@@ -466,7 +468,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
                 if (kmLeft <= 0 || daysLeft <= 0) {
                    alertStatus = 'CRITICAL';
-                   alertMsg = 'MANTENIMIENTO VENCIDO';
+                   alertMsg = 'VENCIDO - REQUIERE ATENCIÓN';
                 } else if (kmLeft <= 500 || daysLeft <= 15) {
                    alertStatus = 'WARNING';
                    alertMsg = 'MANTENIMIENTO PRÓXIMO';
@@ -494,9 +496,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{v.placa}</p>
                         </div>
                         <div className="flex flex-wrap justify-center md:justify-start gap-3">
-                           <div className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest text-white ${
+                           <div className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest text-white flex items-center gap-2 ${
                               alertStatus === 'CRITICAL' ? 'bg-red-500' : alertStatus === 'WARNING' ? 'bg-gold' : 'bg-emerald-500'
                            }`}>
+                              {alertStatus === 'CRITICAL' && <AlertTriangle size={12}/>}
                               {alertMsg}
                            </div>
                            <div className="px-4 py-2 bg-gray-100 dark:bg-dark-elevated rounded-xl text-[9px] font-black text-bordeaux-800 uppercase tracking-widest">
@@ -641,7 +644,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
       {/* --- AI STUDIO (GEMINI 3 PRO / VEO 3.1) --- */}
       {activeTab === 'ai_studio' && (
-        <div className="space-y-6 animate-fadeIn px-2 h-[600px] flex flex-col">
+        <div className="space-y-6 animate-fadeIn px-2 h-[700px] flex flex-col">
            {/* Sub-Navigation for AI */}
            <div className="flex justify-center gap-4 mb-4">
               <button onClick={() => setAiTab('chat')} className={`px-6 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all ${aiTab === 'chat' ? 'bg-bordeaux-950 text-white shadow-lg' : 'bg-white text-gray-400'}`}>
@@ -668,16 +671,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
                    {/* Messages Area */}
                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                      {chatMessages.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-full opacity-30">
+                           <Bot size={60} className="mb-4 text-bordeaux-800"/>
+                           <p className="text-[10px] font-black uppercase tracking-widest">Inicie conversación con Gemini 3 Pro</p>
+                        </div>
+                      )}
                       {chatMessages.map((msg, idx) => (
                          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-bordeaux-950 text-white rounded-tr-none' : 'bg-gray-100 dark:bg-dark-elevated dark:text-gray-200 rounded-tl-none'}`}>
-                               <p>{msg.text}</p>
+                            <div className={`max-w-[80%] p-5 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-bordeaux-950 text-white rounded-tr-none' : 'bg-gray-100 dark:bg-dark-elevated dark:text-gray-200 rounded-tl-none'}`}>
+                               <p className="leading-relaxed">{msg.text}</p>
                                {msg.sources && msg.sources.length > 0 && (
-                                  <div className="mt-3 pt-2 border-t border-gray-200/20">
-                                     <p className="text-[8px] font-black opacity-50 uppercase mb-1">Fuentes:</p>
-                                     {msg.sources.map((src, i) => (
-                                        <a key={i} href={src.uri} target="_blank" className="block text-[9px] text-blue-400 hover:underline truncate">{src.title}</a>
-                                     ))}
+                                  <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/5">
+                                     <p className="text-[8px] font-black opacity-50 uppercase mb-2">Fuentes Consultadas:</p>
+                                     <div className="flex flex-wrap gap-2">
+                                        {msg.sources.map((src, i) => (
+                                           <a key={i} href={src.uri} target="_blank" className="bg-white dark:bg-black/20 px-3 py-1 rounded-lg text-[9px] text-blue-500 hover:text-blue-600 truncate max-w-[200px] flex items-center gap-1">
+                                              <Globe size={10}/> {src.title}
+                                           </a>
+                                        ))}
+                                     </div>
                                   </div>
                                )}
                             </div>
@@ -697,9 +710,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                          onChange={e => setChatInput(e.target.value)}
                          onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
                          placeholder="Pregunte a Gemini 3 Pro (ej: Estrategias de precios, buscar noticias...)"
-                         className="flex-1 bg-gray-50 dark:bg-dark-elevated rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-gold"
+                         className="flex-1 bg-gray-50 dark:bg-dark-elevated rounded-2xl px-6 py-4 text-sm outline-none focus:ring-2 focus:ring-gold font-medium"
                       />
-                      <button onClick={handleSendMessage} className="p-3 bg-bordeaux-950 text-white rounded-2xl hover:scale-105 transition-transform"><ArrowRight size={20}/></button>
+                      <button onClick={handleSendMessage} className="p-4 bg-bordeaux-950 text-white rounded-2xl hover:scale-105 transition-transform"><ArrowRight size={20}/></button>
                    </div>
                 </div>
               )}
@@ -709,53 +722,57 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 <div className="h-full flex flex-col p-8 overflow-y-auto">
                    <div className="flex flex-col md:flex-row gap-8 h-full">
                       <div className="flex-1 space-y-6">
-                         <div className="space-y-2">
-                            <label className="text-[9px] font-black uppercase text-gray-400 ml-2">1. Imagen de Referencia</label>
-                            <label className="w-full h-40 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors overflow-hidden relative">
+                         <div className="space-y-3">
+                            <label className="text-[9px] font-black uppercase text-gray-400 ml-2 flex items-center gap-2"><ImageIcon size={12}/> 1. Imagen Base</label>
+                            <label className="w-full h-48 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer hover:bg-gold/5 transition-colors overflow-hidden relative group">
                                <input type="file" accept="image/*" onChange={handleVeoImageUpload} className="hidden" />
                                {veoImage ? (
                                   <img src={veoImage} className="w-full h-full object-cover" />
                                ) : (
                                   <>
-                                     <Plus size={24} className="text-gray-300 mb-2"/>
-                                     <span className="text-[8px] font-black uppercase text-gray-300">Subir Imagen</span>
+                                     <div className="p-4 bg-gray-100 rounded-full mb-3 group-hover:scale-110 transition-transform"><Plus size={24} className="text-gray-400"/></div>
+                                     <span className="text-[8px] font-black uppercase text-gray-300 tracking-widest">Arrastre o Click para subir</span>
                                   </>
                                )}
                             </label>
                          </div>
-                         <div className="space-y-2">
-                            <label className="text-[9px] font-black uppercase text-gray-400 ml-2">2. Instrucción (Prompt)</label>
+                         <div className="space-y-3">
+                            <label className="text-[9px] font-black uppercase text-gray-400 ml-2 flex items-center gap-2"><Bot size={12}/> 2. Prompt de Animación</label>
                             <textarea 
                                value={veoPrompt} 
                                onChange={e => setVeoPrompt(e.target.value)}
-                               placeholder="Ej: Animar el coche conduciendo por una carretera costera..."
-                               className="w-full h-32 bg-gray-50 dark:bg-dark-elevated rounded-2xl p-4 text-sm resize-none outline-none focus:ring-2 focus:ring-gold"
+                               placeholder="Describa el movimiento deseado (ej: El auto acelera en una autopista futurista con luces de neón...)"
+                               className="w-full h-32 bg-gray-50 dark:bg-dark-elevated rounded-2xl p-5 text-sm resize-none outline-none focus:ring-2 focus:ring-gold font-medium"
                             />
                          </div>
                          <div className="flex gap-4">
-                            <select value={veoAspectRatio} onChange={e => setVeoAspectRatio(e.target.value as any)} className="bg-gray-50 dark:bg-dark-elevated px-4 py-3 rounded-2xl text-xs font-bold border-0">
-                               <option value="16:9">Horizontal (16:9)</option>
-                               <option value="9:16">Vertical (9:16)</option>
-                            </select>
-                            <button onClick={handleGenerateVideo} disabled={isVeoGenerating || !veoImage} className="flex-1 bordeaux-gradient text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:scale-[1.02] disabled:opacity-50 transition-all">
-                               {isVeoGenerating ? <Loader2 className="animate-spin" size={16}/> : <Play size={16}/>} Generar Video (Veo)
+                            <div className="space-y-1">
+                               <label className="text-[8px] font-black uppercase text-gray-300 ml-1">Formato</label>
+                               <select value={veoAspectRatio} onChange={e => setVeoAspectRatio(e.target.value as any)} className="bg-gray-50 dark:bg-dark-elevated px-6 py-4 rounded-2xl text-xs font-bold border-0 outline-none">
+                                  <option value="16:9">Horizontal (16:9)</option>
+                                  <option value="9:16">Vertical (9:16)</option>
+                               </select>
+                            </div>
+                            <button onClick={handleGenerateVideo} disabled={isVeoGenerating || !veoImage} className="flex-1 bordeaux-gradient mt-auto text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 hover:scale-[1.02] disabled:opacity-50 transition-all shadow-xl h-[52px]">
+                               {isVeoGenerating ? <Loader2 className="animate-spin" size={16}/> : <Play size={16} fill="white"/>} 
+                               {isVeoGenerating ? 'Renderizando...' : 'Generar Video con Veo'}
                             </button>
                          </div>
                       </div>
                       
-                      <div className="flex-1 bg-black rounded-3xl flex items-center justify-center relative overflow-hidden">
+                      <div className="flex-1 bg-black rounded-[2.5rem] flex items-center justify-center relative overflow-hidden shadow-2xl border-4 border-gray-900">
                          {generatedVideoUrl ? (
                             <video src={generatedVideoUrl} controls autoPlay loop className="w-full h-full object-contain" />
                          ) : (
                             <div className="text-center opacity-30">
-                               <Video size={48} className="mx-auto text-white mb-2"/>
-                               <p className="text-[9px] font-black text-white uppercase">Vista Previa</p>
+                               <Video size={60} className="mx-auto text-white mb-4"/>
+                               <p className="text-[9px] font-black text-white uppercase tracking-[0.5em]">Vista Previa</p>
                             </div>
                          )}
                          {isVeoGenerating && (
-                            <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-white z-10">
-                               <Loader2 size={40} className="animate-spin mb-4 text-gold"/>
-                               <p className="text-[10px] font-black uppercase tracking-widest">Generando con Veo 3.1...</p>
+                            <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-white z-10 backdrop-blur-sm">
+                               <Loader2 size={50} className="animate-spin mb-6 text-gold"/>
+                               <p className="text-[10px] font-black uppercase tracking-widest animate-pulse">Procesando con Veo 3.1...</p>
                             </div>
                          )}
                       </div>
