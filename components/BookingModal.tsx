@@ -6,7 +6,7 @@ import {
   X, ChevronRight, Upload, ChevronLeft, Smartphone, Copy, 
   CheckCircle2, MessageCircle, Landmark, BadgeCheck, 
   Printer, Image as ImageIcon, Wallet, Loader2,
-  Eraser, ShieldCheck
+  Eraser, ShieldCheck, CreditCard, ArrowRight
 } from 'lucide-react';
 
 const SignaturePad: React.FC<{ onSave: (dataUrl: string) => void; onClear: () => void; lang: Language }> = ({ onSave, onClear, lang }) => {
@@ -99,8 +99,10 @@ const BookingModal: React.FC<{
   const [step, setStep] = useState(1);
   const [hasNotified, setHasNotified] = useState(false);
   const [isProcessingReceipt, setIsProcessingReceipt] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
   const [reservationId] = useState<string>(`${Math.floor(100000 + Math.random() * 900000)}`);
   
+  // State interno usa ISO YYYY-MM-DD para los inputs tipo "date"
   const [formData, setFormData] = useState({
     cliente: '', celular: '', ci: '', inicio: initialDates ? initialDates.start.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
     fin: initialDates ? initialDates.end.toISOString().split('T')[0] : new Date(Date.now() + 86400000).toISOString().split('T')[0],
@@ -118,21 +120,48 @@ const BookingModal: React.FC<{
     return Math.max(1, Math.ceil(diffHours / 24));
   }, [formData.inicio, formData.horaIni, formData.fin, formData.horaFin]);
 
-  const totalBRL = totalDays * vehicle.precio;
-  const totalPYG = Math.round(totalBRL * exchangeRate);
+  const contractTotalBRL = totalDays * vehicle.precio;
+  
+  // SOLO PAGO TOTAL PERMITIDO
+  const paymentAmountBRL = contractTotalBRL;
+  const paymentAmountPYG = Math.round(paymentAmountBRL * exchangeRate);
+
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=JM-${reservationId}`;
+
+  // Función para convertir fecha ISO (YYYY-MM-DD) a formato Paraguay (DD/MM/AAAA)
+  const formatToParaguayDate = (isoDate: string) => {
+    if (!isoDate) return '';
+    const [y, m, d] = isoDate.split('-');
+    return `${d}/${m}/${y}`;
+  };
 
   const handleNext = () => {
     if (step === 3 && paymentBase64) {
+      // AQUÍ OCURRE LA MAGIA: Convertimos a DD/MM/AAAA para el sistema
+      const inicioFormat = formatToParaguayDate(formData.inicio);
+      const finFormat = formatToParaguayDate(formData.fin);
+
       const newRes: Reservation = {
-        id: `JM-${reservationId}`, cliente: formData.cliente.toUpperCase(), email: 'online@jmasociados.com', ci: formData.ci,
-        documentType: 'CI', celular: formData.celular, auto: vehicle.nombre,
-        inicio: `${formData.inicio} ${formData.horaIni}`, fin: `${formData.fin} ${formData.horaFin}`,
-        total: totalBRL, status: 'Confirmed', 
-        driverLicense: licenseBase64 || undefined, signature: formData.signature || undefined,
+        id: `JM-${reservationId}`, 
+        cliente: formData.cliente.toUpperCase(), 
+        email: 'online@jmasociados.com', 
+        ci: formData.ci,
+        documentType: 'CI', 
+        celular: formData.celular, 
+        auto: vehicle.nombre,
+        // GUARDAR CON FORMATO PARAGUAY PARA LA HOJA Y EL CALENDARIO
+        inicio: `${inicioFormat} ${formData.horaIni}`, 
+        fin: `${finFormat} ${formData.horaFin}`,
+        total: contractTotalBRL, 
+        status: 'Confirmed', 
+        driverLicense: licenseBase64 || undefined, 
+        signature: formData.signature || undefined,
         comprobante: paymentBase64 || undefined,
-        includeInCalendar: true, contractAccepted: formData.contractRead
+        includeInCalendar: true, 
+        contractAccepted: formData.contractRead
       };
+      
+      // Enviar al sistema central (App.tsx)
       onSubmit(newRes);
       setStep(4);
     } else if (step < 4) {
@@ -143,13 +172,19 @@ const BookingModal: React.FC<{
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'license' | 'receipt') => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (type === 'receipt') setIsProcessingReceipt(true);
+    if (type === 'receipt') {
+      setIsProcessingReceipt(true);
+      setUploadSuccess(false);
+    }
     const reader = new FileReader();
     reader.onloadend = () => {
       if (type === 'license') setLicenseBase64(reader.result as string);
       else {
         setPaymentBase64(reader.result as string);
-        setTimeout(() => setIsProcessingReceipt(false), 1500);
+        setTimeout(() => {
+           setIsProcessingReceipt(false);
+           setUploadSuccess(true);
+        }, 1500);
       }
     };
     reader.readAsDataURL(file);
@@ -202,37 +237,87 @@ const BookingModal: React.FC<{
           )}
 
           {step === 3 && (
-            <div className="space-y-5 animate-fadeIn">
+            <div className="space-y-6 animate-fadeIn">
+               {/* Resumen de Pago */}
+               <div className="bg-bordeaux-950 p-6 rounded-3xl text-center shadow-2xl border-2 border-gold/20 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-8 opacity-10"><Landmark size={80} className="text-white"/></div>
+                  <p className="text-[9px] font-black text-gold uppercase tracking-[0.3em] mb-2">TOTAL A PAGAR</p>
+                  <div className="flex flex-col items-center justify-center gap-1 relative z-10">
+                     <p className="text-4xl font-robust text-white italic tracking-tighter">R$ {paymentAmountBRL.toLocaleString()}</p>
+                     <div className="h-px w-20 bg-white/20 my-1"></div>
+                     <p className="text-sm font-bold text-gray-300">Gs. {paymentAmountPYG.toLocaleString()}</p>
+                  </div>
+               </div>
+
                <div className="grid grid-cols-2 gap-4">
-                 <div className="bg-red-50 dark:bg-red-950/20 p-5 rounded-[1.5rem] border-2 border-red-100 dark:border-red-900/20 text-center relative overflow-hidden group">
-                    <Landmark size={30} className="absolute -bottom-1 -right-1 text-red-600/5 group-hover:scale-110 transition-transform" />
-                    <p className="text-[7px] font-black text-red-600 mb-2 tracking-[0.2em] uppercase">SANTANDER (PIX)</p>
-                    <button onClick={() => { navigator.clipboard.writeText('24510861818'); alert('PIX Copiado'); }} className="w-full bg-white dark:bg-dark-card p-3 rounded-xl text-[9px] font-black text-red-600 border border-red-100 flex items-center justify-center gap-2">24510861818 <Copy size={10}/></button>
+                 {/* Santander Card */}
+                 <div className="bg-red-600 p-5 rounded-[1.5rem] text-center relative overflow-hidden group shadow-lg text-white">
+                    <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-40 transition-opacity"><Landmark size={40} /></div>
+                    <p className="text-[8px] font-black mb-1 uppercase tracking-widest opacity-80">PIX OFICIAL</p>
+                    <h4 className="text-lg font-robust italic mb-3">SANTANDER</h4>
+                    <button onClick={() => { navigator.clipboard.writeText('24510861818'); alert('PIX Copiado'); }} className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-sm p-3 rounded-xl text-[9px] font-black border border-white/20 flex items-center justify-center gap-2 transition-all">
+                       24510861818 <Copy size={12}/>
+                    </button>
                  </div>
-                 <div className="bg-emerald-50 dark:bg-emerald-950/20 p-5 rounded-[1.5rem] border-2 border-emerald-100 dark:border-emerald-900/20 text-center relative overflow-hidden group">
-                    <Wallet size={30} className="absolute -bottom-1 -right-1 text-emerald-600/5 group-hover:scale-110 transition-transform" />
-                    <p className="text-[7px] font-black text-emerald-600 mb-2 tracking-[0.2em] uppercase">UENO (ALIAS)</p>
-                    <button onClick={() => { navigator.clipboard.writeText('1008110'); alert('Alias Copiado'); }} className="w-full bg-white dark:bg-dark-card p-3 rounded-xl text-[9px] font-black text-emerald-600 border border-emerald-100 flex items-center justify-center gap-2">1008110 <Copy size={10}/></button>
+                 
+                 {/* Ueno Card */}
+                 <div className="bg-emerald-600 p-5 rounded-[1.5rem] text-center relative overflow-hidden group shadow-lg text-white">
+                    <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-40 transition-opacity"><CreditCard size={40} /></div>
+                    <p className="text-[8px] font-black mb-1 uppercase tracking-widest opacity-80">ALIAS BANCARIO</p>
+                    <h4 className="text-lg font-robust italic mb-3">UENO BANK</h4>
+                    <button onClick={() => { navigator.clipboard.writeText('1008110'); alert('Alias Copiado'); }} className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-sm p-3 rounded-xl text-[9px] font-black border border-white/20 flex items-center justify-center gap-2 transition-all">
+                       1008110 <Copy size={12}/>
+                    </button>
                  </div>
                </div>
 
-               <div className="bg-gray-50/50 dark:bg-dark-elevated/40 p-6 rounded-[2.5rem] text-center border-2 dark:border-white/5 space-y-6 shadow-inner">
-                  <div className="flex gap-3">
-                    <div className="flex-1 bg-white dark:bg-dark-card p-3 rounded-2xl border border-gold/10">
-                      <p className="text-[7px] font-black text-gray-400 mb-1">R$ TOTAL</p>
-                      <p className="text-lg font-robust italic dark:text-white">R$ {totalBRL}</p>
-                    </div>
-                    <div className="flex-1 bg-white dark:bg-dark-card p-3 rounded-2xl border border-gold/10">
-                      <p className="text-[7px] font-black text-gold mb-1">Gs. TOTAL</p>
-                      <p className="text-lg font-robust italic text-gold">Gs. {totalPYG.toLocaleString()}</p>
-                    </div>
+               <div className="bg-gray-50 dark:bg-dark-elevated p-6 rounded-[2.5rem] border border-gray-100 dark:border-white/5 space-y-4">
+                  <div className="flex justify-between items-center px-2">
+                     <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Comprobante de Transferencia</p>
+                     {uploadSuccess && <span className="text-[9px] font-black text-green-600 uppercase flex items-center gap-1 animate-pulse"><CheckCircle2 size={12}/> Recibido</span>}
                   </div>
-                  <label className={`flex flex-col items-center justify-center gap-3 w-full h-36 border-4 border-dashed rounded-[2.5rem] cursor-pointer transition-all shadow-xl ${isProcessingReceipt ? 'bg-gold/10 animate-pulse' : paymentBase64 ? 'bg-green-50 dark:bg-green-950/20' : 'bg-white dark:bg-dark-card border-gold/30'}`}>
+                  
+                  <label className={`flex flex-col items-center justify-center gap-3 w-full h-32 border-3 border-dashed rounded-[2rem] cursor-pointer transition-all duration-300 relative overflow-hidden ${
+                     uploadSuccess 
+                     ? 'bg-green-50 border-green-200' 
+                     : isProcessingReceipt 
+                        ? 'bg-gold/5 border-gold/30' 
+                        : 'bg-white hover:bg-gray-50 border-gray-200'
+                  }`}>
                     <input type="file" className="hidden" accept="image/*" onChange={e => handleFileUpload(e, 'receipt')} />
-                    {isProcessingReceipt ? <Loader2 className="animate-spin text-gold" /> : paymentBase64 ? <BadgeCheck className="text-green-500" size={32} /> : <ImageIcon className="text-gold/20" size={32} />}
-                    <span className="text-[7px] font-black uppercase text-gray-400 tracking-widest">{paymentBase64 ? 'Comprobante Listo' : 'Presione para Subir Comprobante'}</span>
+                    
+                    {isProcessingReceipt ? (
+                       <div className="flex flex-col items-center animate-pulse">
+                          <Loader2 className="animate-spin text-gold mb-2" size={24} />
+                          <span className="text-[8px] font-black text-gold uppercase">Procesando...</span>
+                       </div>
+                    ) : uploadSuccess ? (
+                       <div className="flex flex-col items-center animate-bounce">
+                          <BadgeCheck className="text-green-500 mb-2" size={32} />
+                          <span className="text-[9px] font-black text-green-600 uppercase tracking-widest">Listo para Generar</span>
+                       </div>
+                    ) : (
+                       <div className="flex flex-col items-center text-gray-300 hover:text-bordeaux-800 transition-colors">
+                          <Upload size={28} className="mb-2" />
+                          <span className="text-[8px] font-black uppercase tracking-widest">Subir Imagen / PDF</span>
+                       </div>
+                    )}
                   </label>
                </div>
+
+               {/* Prominent Generate Ticket Button - Only visible/active here if success */}
+               <button 
+                  onClick={handleNext}
+                  disabled={!uploadSuccess}
+                  className={`w-full py-6 rounded-[2rem] font-robust text-[12px] uppercase tracking-[0.3em] shadow-xl flex items-center justify-center gap-3 transition-all transform ${
+                     uploadSuccess 
+                     ? 'bg-green-600 text-white hover:scale-[1.02] hover:shadow-green-500/30 cursor-pointer' 
+                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }`}
+               >
+                  {uploadSuccess ? 'Generar Ticket y QR' : 'Adjuntar Comprobante para Finalizar'} 
+                  {uploadSuccess && <ArrowRight size={18} />}
+               </button>
             </div>
           )}
 
@@ -252,13 +337,14 @@ const BookingModal: React.FC<{
                   <div className="mt-6 pt-5 border-t border-dashed border-gray-200 space-y-2">
                      <div className="flex justify-between text-[9px] font-bold"><span className="text-gray-300 uppercase">Socio:</span><span className="text-bordeaux-950 uppercase italic">{formData.cliente}</span></div>
                      <div className="flex justify-between text-[9px] font-bold"><span className="text-gray-300 uppercase">Unidad:</span><span className="text-bordeaux-950 uppercase italic">{vehicle.nombre}</span></div>
-                     <div className="flex justify-between text-[9px] font-black border-t border-gray-100 pt-2"><span className="text-bordeaux-800">TOTAL:</span><span className="text-bordeaux-950">R$ {totalBRL}</span></div>
+                     <div className="flex justify-between text-[9px] font-black border-t border-gray-100 pt-2"><span className="text-bordeaux-800">TOTAL CONTRATO:</span><span className="text-bordeaux-950">R$ {contractTotalBRL}</span></div>
+                     <div className="flex justify-between text-[9px] font-black bg-gold/10 p-1 rounded"><span className="text-bordeaux-800">ABONADO:</span><span className="text-bordeaux-950">R$ {paymentAmountBRL} (TOTAL)</span></div>
                   </div>
                </div>
 
                <div className="w-full space-y-3">
                   <button onClick={() => {
-                     const msg = `✨ *JM ASOCIADOS - MASTER 3.0* ✨\n\nReserva para *${vehicle.nombre}* validada exitosamente.\n🆔 ID: JM-${reservationId}\n📅 Inicio: ${formData.inicio} ${formData.horaIni}\n💰 Total: R$ ${totalBRL}\n\nGracias por su confianza.`;
+                     const msg = `✨ *JM ASOCIADOS - MASTER 2026* ✨\n\nReserva para *${vehicle.nombre}* validada exitosamente.\n🆔 ID: JM-${reservationId}\n📅 Inicio: ${formatToParaguayDate(formData.inicio)} ${formData.horaIni}\n💰 Total Contrato: R$ ${contractTotalBRL}\n✅ Abonado: R$ ${paymentAmountBRL} (TOTAL)\n\nGracias por su confianza.`;
                      window.open(`https://wa.me/595991681191?text=${encodeURIComponent(msg)}`, '_blank');
                      setHasNotified(true);
                   }} className="w-full flex items-center justify-center gap-4 py-6 bg-green-600 text-white rounded-[2.5rem] font-black text-[12px] uppercase tracking-widest shadow-xl active:scale-95 transition-all">
@@ -273,12 +359,12 @@ const BookingModal: React.FC<{
           )}
         </div>
 
-        {step < 4 && (
+        {step < 3 && (
           <div className="p-8 bg-white dark:bg-dark-base border-t dark:border-white/5 shrink-0">
-             <button onClick={handleNext} disabled={ (step === 1 && !formData.cliente) || (step === 2 && !formData.signature) || (step === 3 && (!paymentBase64 || isProcessingReceipt)) } 
-               className={`w-full py-8 text-white rounded-[2.5rem] font-robust text-[12px] uppercase tracking-[0.4em] shadow-xl flex items-center justify-center gap-4 disabled:opacity-20 active:scale-95 transition-all ${step === 3 ? 'bg-green-600 shadow-green-600/30 ring-4 ring-green-600/5' : 'bordeaux-gradient'}`}
+             <button onClick={handleNext} disabled={ (step === 1 && !formData.cliente) || (step === 2 && !formData.signature) } 
+               className={`w-full py-8 text-white rounded-[2.5rem] font-robust text-[12px] uppercase tracking-[0.4em] shadow-xl flex items-center justify-center gap-4 disabled:opacity-20 active:scale-95 transition-all bordeaux-gradient`}
              >
-               {step === 3 ? 'GENERAR TICKET QR' : 'SIGUIENTE PASO'} <ChevronRight size={20} />
+               SIGUIENTE PASO <ChevronRight size={20} />
              </button>
           </div>
         )}

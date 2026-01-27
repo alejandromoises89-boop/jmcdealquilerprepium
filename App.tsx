@@ -92,8 +92,11 @@ const App: React.FC = () => {
       const cloudRes = await fetchReservationsFromSheet();
       if (cloudRes) {
         setReservations(prevLocal => {
-          const localOnly = prevLocal.filter(r => !r.id.startsWith('CLOUD-R98-'));
+          // Filtrar las locales que no son "nube" para no duplicar las que ya vienen de la nube
+          const localOnly = prevLocal.filter(r => !r.id.startsWith('CLOUD-'));
           const combined = [...cloudRes, ...localOnly];
+          
+          // Eliminar duplicados basados en clave única
           const uniqueMap = new Map();
           combined.forEach(item => {
             const key = `${item.cliente}-${item.auto}-${item.inicio}`.toLowerCase().replace(/\s+/g, '');
@@ -110,12 +113,17 @@ const App: React.FC = () => {
   };
 
   const handleNewReservation = async (newRes: Reservation) => {
+    // 1. Agregar inmediatamente al estado local para bloquear calendario visualmente
     setReservations(prev => [newRes, ...prev]);
+    
+    // 2. Intentar guardar en nube (fondo)
     setIsSavingCloud(true);
     try {
       const success = await saveReservationToSheet(newRes);
       if (success) {
         console.log("Sincronización con Nube Exitosa");
+      } else {
+        console.warn("No se pudo guardar en la nube (Web App URL no configurada o error de red), pero se guardó localmente.");
       }
     } catch (error) {
       console.error("Error al guardar en la nube:", error);
@@ -133,7 +141,7 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchBrlToPyg().then(setExchangeRate);
     syncDataFromSheet();
-    const interval = setInterval(syncDataFromSheet, 300000);
+    const interval = setInterval(syncDataFromSheet, 300000); // 5 minutos
     return () => clearInterval(interval);
   }, []);
 

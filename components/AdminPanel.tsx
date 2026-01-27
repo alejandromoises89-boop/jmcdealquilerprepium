@@ -7,7 +7,9 @@ import {
   ArrowRight, PieChart as PieChartIcon, BarChart3, ClipboardList, 
   Car, MessageCircle, FileSpreadsheet, ShieldCheck, 
   Edit3, X, Settings, User, CreditCard, Check, AlertCircle, Bell,
-  Sparkles, Bot, Video, MapPin, Globe, Loader2, Play, Image as ImageIcon
+  Sparkles, Bot, Video, MapPin, Globe, Loader2, Play, Image as ImageIcon,
+  Fuel, Gauge, Users, Zap, RefreshCw, HandCoins, Repeat, Calculator, PenTool,
+  CalendarClock, Timer, HardDrive
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
@@ -64,14 +66,37 @@ const NotificationCenter: React.FC<{ alerts: string[] }> = ({ alerts }) => {
 const AdminPanel: React.FC<AdminPanelProps> = ({ 
   flota = [], setFlota, reservations = [], setReservations, onDeleteReservation, 
   exchangeRate, gastos = [], setGastos, mantenimientos = [], setMantenimientos, 
-  vencimientos = [], setVencimientos
+  vencimientos = [], setVencimientos, onAddReservation,
+  isSyncing
 }) => {
-  const [activeTab, setActiveTab] = useState<'finanzas' | 'contratos' | 'taller' | 'checklists' | 'ai_studio'>('finanzas');
+  const [activeTab, setActiveTab] = useState<'finanzas' | 'contratos' | 'flota' | 'taller' | 'checklists' | 'ai_studio' | 'vencimientos'>('finanzas');
   const [finanzasFilter, setFinanzasFilter] = useState({ start: '', end: '', vehicle: '' });
   const [showManualBooking, setShowManualBooking] = useState(false);
   const [manualRes, setManualRes] = useState({ cliente: '', auto: '', inicio: '', fin: '', total: 0 });
   const [notifications, setNotifications] = useState<string[]>([]);
   const [showNewChecklist, setShowNewChecklist] = useState<string | null>(null);
+  
+  // Taller collapsible state
+  const [expandedMaintenance, setExpandedMaintenance] = useState<Record<string, boolean>>({});
+
+  // RESCISSION / SWAP MODAL
+  const [managingRes, setManagingRes] = useState<Reservation | null>(null);
+  const [manageMode, setManageMode] = useState<'swap' | 'cancel'>('swap');
+  const [swapVehicleId, setSwapVehicleId] = useState('');
+  
+  // NEW: Editable States for Management
+  const [manualSwapValues, setManualSwapValues] = useState({ newTotal: 0, diff: 0 });
+  const [manualCancelValues, setManualCancelValues] = useState({ penalty: 0, refund: 0 });
+  const [customObs, setCustomObs] = useState('');
+
+  // FLOTA MANAGEMENT STATE
+  const [showAddVehicle, setShowAddVehicle] = useState(false);
+  const [newVehicle, setNewVehicle] = useState<Partial<Vehicle>>({
+    nombre: '', precio: 0, placa: '', color: '', kilometrajeActual: 0,
+    transmision: 'Automático', combustible: 'Nafta', asientos: 5, tipo: 'Compacto',
+    img: '', specs: []
+  });
+  const [tempSpec, setTempSpec] = useState('');
 
   // AI STUDIO STATE
   const [aiTab, setAiTab] = useState<'chat' | 'veo'>('chat');
@@ -86,6 +111,140 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [veoAspectRatio, setVeoAspectRatio] = useState<'16:9' | '9:16'>('16:9');
   const [isVeoGenerating, setIsVeoGenerating] = useState(false);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
+
+  // NEW: State for Vencimientos form
+  const [newExpiration, setNewExpiration] = useState<Partial<ExpirationRecord>>({
+    tipo: 'Seguro', monto: 0, vencimiento: '', vehicleId: '', pagado: false
+  });
+
+  // --- LOGIC: AUTO-CALCULO TOTAL MANUAL ---
+  useEffect(() => {
+    if (showManualBooking && manualRes.auto && manualRes.inicio && manualRes.fin) {
+      const v = flota.find(f => f.nombre === manualRes.auto);
+      if (v) {
+        const start = new Date(manualRes.inicio);
+        const end = new Date(manualRes.fin);
+        const diffTime = Math.abs(end.getTime() - start.getTime());
+        const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        const calcTotal = (days > 0 ? days : 1) * v.precio;
+        setManualRes(prev => ({...prev, total: calcTotal}));
+      }
+    }
+  }, [manualRes.auto, manualRes.inicio, manualRes.fin, showManualBooking, flota]);
+
+  // --- LOGIC: AUTO-CALCULO SWAP & CANCEL ---
+  useEffect(() => {
+     if (manageMode === 'swap' && managingRes && swapVehicleId) {
+        const target = flota.find(v => v.id === swapVehicleId);
+        if (target) {
+            const start = parseDate(managingRes.inicio);
+            const end = parseDate(managingRes.fin);
+            const diffTime = Math.abs(end.getTime() - start.getTime());
+            const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+            const calculatedTotal = days * target.precio;
+            const calculatedDiff = calculatedTotal - managingRes.total;
+            setManualSwapValues({ newTotal: calculatedTotal, diff: calculatedDiff });
+        }
+     }
+  }, [swapVehicleId, managingRes, manageMode, flota]);
+
+  useEffect(() => {
+     if (manageMode === 'cancel' && managingRes) {
+        const { penalty, refund } = calculatePenalty(managingRes);
+        setManualCancelValues({ penalty, refund });
+     }
+  }, [manageMode, managingRes]);
+
+  // --- HELPER: DATE PARSER ---
+  const parseDate = (dStr: string) => {
+    if (!dStr) return new Date();
+    if(dStr.includes('/')) {
+       const [d, m, y] = dStr.split('/');
+       return new Date(Number(y), Number(m)-1, Number(d));
+    }
+    // Try YYYY-MM-DD
+    const parts = dStr.split('-');
+    if(parts.length === 3) return new Date(Number(parts[0]), Number(parts[1])-1, Number(parts[2]));
+    return new Date(dStr);
+  };
+
+  // --- HELPER: PENALTY CALCULATION ---
+  const calculatePenalty = (res: Reservation) => {
+     const start = parseDate(res.inicio);
+     const end = parseDate(res.fin);
+     
+     if (isNaN(start.getTime()) || isNaN(end.getTime())) return { days: 0, penalty: 0, refund: 0, rate: 0 };
+
+     const diffTime = Math.abs(end.getTime() - start.getTime());
+     const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+     
+     // REGLA DE MULTA
+     // Si <= 5 dias: 15%
+     // Si > 5 dias: 50%
+     const penaltyRate = days <= 5 ? 0.15 : 0.50;
+     const penalty = Math.round(res.total * penaltyRate);
+     const refund = res.total - penalty;
+
+     return { days, penalty, refund, rate: penaltyRate * 100 };
+  };
+
+  const handleApplyChanges = () => {
+    if (!managingRes) return;
+    
+    let updatedReservations = [...reservations];
+    const dateNow = new Date().toLocaleDateString('es-PY');
+    
+    if (manageMode === 'swap') {
+       if (!swapVehicleId) return alert('Seleccione un vehículo');
+       const targetVehicle = flota.find(v => v.id === swapVehicleId);
+       if (!targetVehicle) return;
+
+       // Use MANUAL values that might have been edited
+       const { newTotal, diff } = manualSwapValues;
+
+       updatedReservations = updatedReservations.map(r => 
+          r.id === managingRes.id ? { 
+            ...r, 
+            auto: targetVehicle.nombre,
+            total: newTotal,
+            obs: `${r.obs || ''} | [CAMBIO ${dateNow}]: ${managingRes.auto} -> ${targetVehicle.nombre}. Nuevo Total: R$ ${newTotal}. Dif: R$ ${diff}. Nota: ${customObs || 'Sin notas.'}`
+          } : r
+       );
+       
+       const msg = diff > 0 
+        ? `Unidad cambiada. El cliente debe abonar la diferencia de R$ ${diff}.`
+        : `Unidad cambiada. Saldo a favor del cliente: R$ ${Math.abs(diff)}.`;
+        
+       alert(msg);
+    } 
+    else if (manageMode === 'cancel') {
+       // Use MANUAL values that might have been edited
+       const { penalty, refund } = manualCancelValues;
+       
+       if(!confirm(`CONFIRMACIÓN DE RESCISIÓN MANUAL\n\nTotal Original: R$ ${managingRes.total}\n\nRetención (Multa Definida): R$ ${penalty}\nDevolución Cliente: R$ ${refund}\n\n¿Proceder con estos valores?`)) return;
+       
+       const obsText = ` | [RESCISIÓN ${dateNow}]: Contrato cancelado. Multa retenida: R$ ${penalty}. Devolución autorizada al cliente: R$ ${refund}. Nota: ${customObs || 'Ajuste manual aplicado.'}`;
+
+       updatedReservations = updatedReservations.map(r => 
+          r.id === managingRes.id ? { 
+            ...r, 
+            status: 'Cancelled',
+            obs: (r.obs || '') + obsText
+          } : r
+       );
+       alert(`Contrato rescindido. Se ha dejado constancia en el historial:\n\n"Devolución de R$ ${refund} pendiente de ejecución."`);
+    }
+
+    setReservations(updatedReservations);
+    setManagingRes(null);
+    setCustomObs('');
+  };
+
+  const handleVerifyPayment = (resId: string) => {
+    if(confirm("¿Validar manualmente el pago de esta reserva y marcar como CONFIRMADA?")) {
+        setReservations(reservations.map(r => r.id === resId ? {...r, status: 'Confirmed'} : r));
+    }
+  };
 
   // --- LOGIC: FINANZAS ---
   const stats = useMemo(() => {
@@ -278,6 +437,67 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // FLOTA FUNCTIONS
+  const handleSaveVehicle = () => {
+     if(!newVehicle.nombre || !newVehicle.precio || !newVehicle.placa) {
+        alert("Complete los campos obligatorios (*)");
+        return;
+     }
+
+     const finalVehicle: Vehicle = {
+        id: `V-${Date.now()}`,
+        nombre: newVehicle.nombre || 'Nuevo Vehículo',
+        precio: Number(newVehicle.precio),
+        img: newVehicle.img || 'https://via.placeholder.com/400x200?text=Sin+Imagen',
+        estado: 'Disponible',
+        placa: newVehicle.placa || 'SIN-PLACA',
+        color: newVehicle.color || 'Blanco',
+        specs: newVehicle.specs || [],
+        kilometrajeActual: Number(newVehicle.kilometrajeActual),
+        transmision: newVehicle.transmision,
+        combustible: newVehicle.combustible,
+        asientos: Number(newVehicle.asientos),
+        tipo: newVehicle.tipo,
+        checklists: []
+     };
+
+     setFlota([...flota, finalVehicle]);
+     setShowAddVehicle(false);
+     setNewVehicle({
+       nombre: '', precio: 0, placa: '', color: '', kilometrajeActual: 0,
+       transmision: 'Automático', combustible: 'Nafta', asientos: 5, tipo: 'Compacto',
+       img: '', specs: []
+     });
+     alert('Vehículo agregado a la flota exitosamente.');
+  };
+
+  const addSpec = () => {
+    if (tempSpec && newVehicle.specs) {
+       setNewVehicle({...newVehicle, specs: [...newVehicle.specs, tempSpec]});
+       setTempSpec('');
+    }
+  };
+
+  const handleAddExpiration = () => {
+    if (!newExpiration.vehicleId || !newExpiration.vencimiento || !newExpiration.monto) {
+       alert("Complete todos los campos del vencimiento");
+       return;
+    }
+    const vehicle = flota.find(f => f.id === newExpiration.vehicleId);
+    const record: ExpirationRecord = {
+       id: `VENC-${Date.now()}`,
+       vehicleId: newExpiration.vehicleId,
+       vehicleName: vehicle ? vehicle.nombre : 'Desconocido',
+       tipo: newExpiration.tipo || 'Seguro',
+       vencimiento: newExpiration.vencimiento,
+       monto: Number(newExpiration.monto),
+       pagado: false,
+       referencia: newExpiration.referencia || ''
+    };
+    setVencimientos([...vencimientos, record]);
+    setNewExpiration({ tipo: 'Seguro', monto: 0, vencimiento: '', vehicleId: '', pagado: false });
+  };
+
   const COLORS = ['#800000', '#D4AF37', '#10b981', '#3b82f6'];
 
   return (
@@ -305,8 +525,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         {[
           {id:'finanzas', icon: Landmark, label: 'Finanzas'},
           {id:'contratos', icon: FileText, label: 'Contratos'},
+          {id:'flota', icon: Car, label: 'Gestión Flota'},
           {id:'taller', icon: Wrench, label: 'Taller'},
           {id:'checklists', icon: ClipboardList, label: 'Inspección'},
+          {id:'vencimientos', icon: Bell, label: 'Vencimientos'},
           {id:'ai_studio', icon: Sparkles, label: 'AI Studio'}
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} 
@@ -317,6 +539,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             <span className="text-[8px] font-black uppercase tracking-widest">{tab.label}</span>
           </button>
         ))}
+      </div>
+
+      {/* STATUS BAR FOR DATA SAVING VISIBILITY */}
+      <div className="mx-4 px-6 py-3 bg-gray-100 dark:bg-dark-elevated rounded-2xl flex items-center justify-between border border-gray-200 dark:border-white/5 shadow-inner">
+         <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-gold animate-pulse' : 'bg-green-500'}`}></div>
+            <span className="text-[9px] font-black uppercase text-gray-500 tracking-widest flex items-center gap-2">
+               <HardDrive size={10}/>
+               {isSyncing ? 'Sincronizando con Google Sheets...' : 'Datos Guardados (Local Storage Seguro)'}
+            </span>
+         </div>
+         <div className="flex items-center gap-2 text-[8px] font-bold text-gray-400 uppercase">
+            <span className="hidden md:inline">Última act: {new Date().toLocaleTimeString()}</span>
+            {isSyncing && <RefreshCw size={10} className="animate-spin"/>}
+         </div>
       </div>
 
       {/* --- FINANZAS (ENHANCED) --- */}
@@ -393,7 +630,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
       {/* --- CONTRATOS --- */}
       {activeTab === 'contratos' && (
-        <div className="space-y-6 px-2 animate-fadeIn">
+        <div className="space-y-6 px-2 animate-fadeIn relative">
            <button onClick={() => setShowManualBooking(!showManualBooking)} className="w-full py-6 bg-gold/10 border-4 border-dashed border-gold text-gold rounded-[2.5rem] font-black text-[11px] uppercase tracking-[0.3em] flex items-center justify-center gap-4 hover:bg-gold/20 transition-all">
               <UserPlus size={24}/> Nuevo Contrato Directo (Bloquear Agenda)
            </button>
@@ -401,12 +638,39 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
            {showManualBooking && (
              <form onSubmit={(e) => {
                e.preventDefault();
+               // Formatear fechas a DD/MM/AAAA para consistencia con la nube y el calendario
+               const startParts = manualRes.inicio.split('-');
+               const endParts = manualRes.fin.split('-');
+               const startFormatted = `${startParts[2]}/${startParts[1]}/${startParts[0]}`;
+               const endFormatted = `${endParts[2]}/${endParts[1]}/${endParts[0]}`;
+
                const res: Reservation = {
-                 id: `JM-MAN-${Date.now()}`, cliente: manualRes.cliente.toUpperCase(), email: 'manual@jmasociados.com', ci: 'MANUAL', documentType: 'CI', celular: '---', auto: manualRes.auto, inicio: manualRes.inicio, fin: manualRes.fin, total: manualRes.total, status: 'Confirmed', includeInCalendar: true
+                 id: `JM-MAN-${Date.now()}`, 
+                 cliente: manualRes.cliente.toUpperCase(), 
+                 email: 'manual@jmasociados.com', 
+                 ci: 'MANUAL', 
+                 documentType: 'CI', 
+                 celular: '---', 
+                 auto: manualRes.auto, 
+                 inicio: startFormatted, // Guardar en formato paraguayo/hoja
+                 fin: endFormatted, 
+                 total: manualRes.total, 
+                 status: 'Confirmed', // Importante para que salga en rojo
+                 includeInCalendar: true
                };
-               setReservations([res, ...reservations]);
-               setShowManualBooking(false);
-               alert("Fechas bloqueadas en el calendario.");
+               
+               // USAR onAddReservation para que se guarde en la Nube y Local
+               if (onAddReservation) {
+                 onAddReservation(res);
+                 setShowManualBooking(false);
+                 setManualRes({ cliente: '', auto: '', inicio: '', fin: '', total: 0 });
+                 alert("Reserva Manual Confirmada: Bloqueando Calendario y Sincronizando Nube...");
+               } else {
+                 setReservations([res, ...reservations]);
+                 setShowManualBooking(false);
+                 alert("Guardado localmente (Sin conexión a función principal).");
+               }
+
              }} className="bg-white dark:bg-dark-card p-10 rounded-[3.5rem] border-2 border-gold shadow-2xl space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                    <input type="text" placeholder="Cliente" required value={manualRes.cliente} onChange={e => setManualRes({...manualRes, cliente: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0" />
@@ -418,7 +682,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 <div className="grid grid-cols-3 gap-4">
                    <input type="date" required value={manualRes.inicio} onChange={e => setManualRes({...manualRes, inicio: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0" />
                    <input type="date" required value={manualRes.fin} onChange={e => setManualRes({...manualRes, fin: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0" />
-                   <input type="number" placeholder="Total BRL" required value={manualRes.total} onChange={e => setManualRes({...manualRes, total: Number(e.target.value)})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0" />
+                   <div className="relative">
+                      <input type="number" placeholder="Total BRL" required value={manualRes.total} onChange={e => setManualRes({...manualRes, total: Number(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0" />
+                      {manualRes.total > 0 && <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-green-600 uppercase">Automático</span>}
+                   </div>
                 </div>
                 <button type="submit" className="w-full py-6 bordeaux-gradient text-white rounded-[2rem] font-black uppercase tracking-widest">Confirmar Bloqueo de Fechas</button>
              </form>
@@ -426,23 +693,237 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
              {reservations.map(r => (
-               <div key={r.id} className="bg-white dark:bg-dark-card p-6 rounded-[2.5rem] border dark:border-white/5 flex justify-between items-center group hover:border-gold cursor-pointer transition-all shadow-md">
+               <div key={r.id} className="bg-white dark:bg-dark-card p-6 rounded-[2.5rem] border dark:border-white/5 flex justify-between items-center group hover:border-gold cursor-pointer transition-all shadow-md relative">
                   <div className="flex items-center gap-4">
                      <div className="w-12 h-12 bg-bordeaux-50 rounded-2xl flex items-center justify-center text-bordeaux-800"><FileText size={20}/></div>
                      <div>
                         <p className="text-sm font-black dark:text-white uppercase italic leading-none">{r.cliente}</p>
                         <p className="text-[9px] text-gray-400 font-bold mt-1 uppercase">{r.auto} | {r.inicio}</p>
+                        {r.obs && <p className="text-[8px] text-blue-500 font-bold mt-1 uppercase italic whitespace-pre-wrap">{r.obs}</p>}
                      </div>
                   </div>
                   <div className="text-right flex items-center gap-4">
                      <div>
                        <p className="text-lg font-robust dark:text-white">R$ {r.total}</p>
-                       <span className={`px-3 py-0.5 rounded-full text-[7px] font-black uppercase ${r.status === 'Confirmed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{r.status}</span>
+                       <span className={`px-3 py-0.5 rounded-full text-[7px] font-black uppercase ${r.status === 'Confirmed' ? 'bg-green-100 text-green-700' : r.status === 'Cancelled' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>{r.status}</span>
                      </div>
+                     {/* Manual Verification Button */}
+                     {r.status !== 'Confirmed' && r.status !== 'Completed' && r.status !== 'Cancelled' && (
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); handleVerifyPayment(r.id); }} 
+                            className="p-3 bg-green-50 text-green-600 hover:bg-green-100 rounded-xl transition-colors"
+                            title="Validar Pago Manualmente"
+                        >
+                            <CheckCircle2 size={16}/>
+                        </button>
+                     )}
+                     <button onClick={(e) => { e.stopPropagation(); setManagingRes(r); }} className="p-3 text-gray-300 hover:text-bordeaux-800 transition-colors"><Settings size={16}/></button>
                      <button onClick={(e) => { e.stopPropagation(); onDeleteReservation?.(r.id); }} className="p-3 text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
                   </div>
                </div>
              ))}
+           </div>
+
+           {/* --- MODAL GESTION AVANZADA --- */}
+           {managingRes && (
+             <div className="fixed inset-0 z-[200] flex items-center justify-center bg-dark-base/90 backdrop-blur-sm p-4 animate-fadeIn">
+                <div className="bg-white dark:bg-dark-card w-full max-w-lg rounded-[3rem] p-8 shadow-2xl border-4 border-gold relative max-h-[90vh] overflow-y-auto scrollbar-hide">
+                   <button onClick={() => setManagingRes(null)} className="absolute top-6 right-6 p-2 bg-gray-100 rounded-full hover:bg-red-100 hover:text-red-500 transition-all"><X size={20}/></button>
+                   
+                   <div className="text-center mb-8">
+                      <h3 className="text-2xl font-robust text-bordeaux-950 dark:text-white italic">Gestión Avanzada</h3>
+                      <p className="text-[10px] font-black text-gold uppercase tracking-[0.2em]">Contrato: {managingRes.id}</p>
+                   </div>
+
+                   <div className="flex gap-2 bg-gray-100 dark:bg-dark-elevated p-1 rounded-2xl mb-6">
+                      <button onClick={() => setManageMode('swap')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${manageMode === 'swap' ? 'bg-white shadow-md text-bordeaux-950' : 'text-gray-400'}`}>Cambio Unidad</button>
+                      <button onClick={() => setManageMode('cancel')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${manageMode === 'cancel' ? 'bg-white shadow-md text-red-600' : 'text-gray-400'}`}>Rescisión</button>
+                   </div>
+
+                   {manageMode === 'swap' && (
+                     <div className="space-y-4 animate-slideUp">
+                        <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                           <p className="text-[10px] text-blue-700 font-bold flex items-center gap-2"><Repeat size={14}/> El cambio mantiene las fechas. Puede ajustar los montos manualmente.</p>
+                        </div>
+                        <div className="space-y-2">
+                           <label className="text-[9px] font-black uppercase text-gray-400">Seleccionar Nueva Unidad</label>
+                           <select value={swapVehicleId} onChange={e => setSwapVehicleId(e.target.value)} className="w-full bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none">
+                              <option value="">Seleccione...</option>
+                              {flota.filter(v => v.nombre !== managingRes.auto).map(v => (
+                                 <option key={v.id} value={v.id}>{v.nombre} ({v.placa})</option>
+                              ))}
+                           </select>
+                        </div>
+                        {swapVehicleId && (
+                           <div className={`p-4 rounded-2xl border ${manualSwapValues.diff > 0 ? 'bg-red-50 border-red-100 text-red-600' : 'bg-green-50 border-green-100 text-green-600'}`}>
+                               <div className="grid grid-cols-2 gap-4">
+                                   <div className="space-y-1">
+                                      <span className="text-[9px] font-black uppercase">Nuevo Total (R$)</span>
+                                      <input 
+                                         type="number" 
+                                         value={manualSwapValues.newTotal} 
+                                         onChange={e => {
+                                             const val = Number(e.target.value);
+                                             setManualSwapValues({ newTotal: val, diff: val - managingRes.total });
+                                         }}
+                                         className="w-full bg-white/50 rounded-xl px-2 py-1 font-bold border-b border-gray-300 outline-none"
+                                      />
+                                   </div>
+                                   <div className="space-y-1 text-right">
+                                      <span className="text-[9px] font-black uppercase">{manualSwapValues.diff > 0 ? 'A PAGAR' : 'DEVOLVER'} (R$)</span>
+                                      <input 
+                                         type="number" 
+                                         value={manualSwapValues.diff} 
+                                         onChange={e => {
+                                             const val = Number(e.target.value);
+                                             setManualSwapValues({ diff: val, newTotal: managingRes.total + val });
+                                         }}
+                                         className="w-full bg-white/50 rounded-xl px-2 py-1 font-black text-right border-b border-gray-300 outline-none"
+                                      />
+                                   </div>
+                               </div>
+                           </div>
+                        )}
+                     </div>
+                   )}
+
+                   {manageMode === 'cancel' && (
+                     <div className="space-y-4 animate-slideUp">
+                         <div className="bg-red-50 p-6 rounded-3xl border border-red-100 text-center space-y-4">
+                             <div className="flex justify-center items-center gap-2">
+                                <Calculator size={14} className="text-red-400"/>
+                                <span className="text-[9px] font-black text-red-400 uppercase tracking-widest">Cálculo de Rescisión</span>
+                             </div>
+                             
+                             <div className="grid grid-cols-2 gap-4 text-left">
+                                <div className="space-y-1">
+                                    <label className="text-[9px] font-black uppercase text-gray-400">Multa (Retención)</label>
+                                    <input 
+                                       type="number" 
+                                       value={manualCancelValues.penalty} 
+                                       onChange={e => {
+                                          const val = Number(e.target.value);
+                                          setManualCancelValues({ penalty: val, refund: managingRes.total - val });
+                                       }}
+                                       className="w-full bg-white rounded-xl px-4 py-2 font-bold text-red-600 border border-red-100 text-lg"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[9px] font-black uppercase text-gray-400">Devolución Cliente</label>
+                                    <input 
+                                       type="number" 
+                                       value={manualCancelValues.refund} 
+                                       onChange={e => {
+                                          const val = Number(e.target.value);
+                                          setManualCancelValues({ refund: val, penalty: managingRes.total - val });
+                                       }}
+                                       className="w-full bg-white rounded-xl px-4 py-2 font-bold text-green-600 border border-green-100 text-lg"
+                                    />
+                                </div>
+                             </div>
+                         </div>
+                         <div className="flex justify-between items-center px-4 py-3 bg-gray-50 rounded-2xl">
+                             <span className="text-[10px] font-black uppercase text-gray-400">Total Original Pagado</span>
+                             <span className="font-bold text-gray-700">R$ {managingRes.total}</span>
+                         </div>
+                     </div>
+                   )}
+
+                   {/* Custom Observation Field */}
+                   <div className="mt-6 space-y-2">
+                      <label className="text-[9px] font-black uppercase text-gray-400 ml-1 flex items-center gap-2"><PenTool size={10}/> Motivo / Observación Adicional</label>
+                      <textarea 
+                         value={customObs}
+                         onChange={e => setCustomObs(e.target.value)}
+                         placeholder="Escriba aquí cualquier detalle adicional para el registro..."
+                         className="w-full bg-gray-50 dark:bg-dark-base rounded-2xl px-5 py-3 text-xs font-medium border-0 outline-none h-20 resize-none focus:ring-2 focus:ring-gold"
+                      />
+                   </div>
+
+                   <button onClick={handleApplyChanges} className="w-full mt-6 py-5 bordeaux-gradient text-white rounded-[2rem] font-black text-[11px] uppercase tracking-[0.3em] shadow-xl hover:scale-[1.02] transition-transform">
+                      {manageMode === 'swap' ? 'Confirmar Cambio' : 'Ejecutar Rescisión'}
+                   </button>
+                </div>
+             </div>
+           )}
+        </div>
+      )}
+
+      {/* --- VENCIMIENTOS TAB --- */}
+      {activeTab === 'vencimientos' && (
+        <div className="space-y-6 animate-fadeIn px-2">
+           <div className="bg-white dark:bg-dark-card p-6 rounded-[3rem] border-2 border-gold/10 shadow-xl space-y-4">
+              <h3 className="text-xl font-robust dark:text-white italic uppercase text-center flex items-center justify-center gap-2"><Bell className="text-gold"/> Monitor de Vencimientos</h3>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                 <select value={newExpiration.vehicleId} onChange={e => setNewExpiration({...newExpiration, vehicleId: e.target.value})} className="col-span-2 bg-gray-50 dark:bg-dark-base rounded-xl px-4 py-3 text-xs font-bold">
+                    <option value="">Seleccionar Vehículo...</option>
+                    {flota.map(v => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+                 </select>
+                 <select value={newExpiration.tipo} onChange={e => setNewExpiration({...newExpiration, tipo: e.target.value as any})} className="bg-gray-50 dark:bg-dark-base rounded-xl px-4 py-3 text-xs font-bold">
+                    <option value="Seguro">Seguro</option>
+                    <option value="Patente">Patente</option>
+                    <option value="Cuota">Cuota</option>
+                    <option value="Inspección">Inspección</option>
+                 </select>
+                 <input type="date" value={newExpiration.vencimiento} onChange={e => setNewExpiration({...newExpiration, vencimiento: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-xl px-4 py-3 text-xs font-bold" />
+                 <input type="number" placeholder="Monto" value={newExpiration.monto} onChange={e => setNewExpiration({...newExpiration, monto: Number(e.target.value)})} className="bg-gray-50 dark:bg-dark-base rounded-xl px-4 py-3 text-xs font-bold" />
+              </div>
+              <button onClick={handleAddExpiration} className="w-full py-4 bg-bordeaux-950 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-[1.01] transition-all">Agregar Vencimiento</button>
+           </div>
+           
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {vencimientos.sort((a,b) => new Date(a.vencimiento).getTime() - new Date(b.vencimiento).getTime()).map(v => {
+                 const today = new Date();
+                 today.setHours(0,0,0,0);
+                 const exp = new Date(v.vencimiento + 'T00:00:00'); // Asegura que se parsee en hora local
+                 const diffTime = exp.getTime() - today.getTime();
+                 const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                 
+                 const isCritical = days <= 3;
+                 const isWarning = days <= 15 && days > 3;
+
+                 return (
+                    <div key={v.id} className={`p-8 rounded-[2.5rem] border-2 shadow-xl relative overflow-hidden transition-all group ${
+                       isCritical ? 'bg-red-50 border-red-500 shadow-red-500/20' : 
+                       isWarning ? 'bg-amber-50 border-amber-400 shadow-amber-500/10' : 
+                       'bg-white dark:bg-dark-card border-gray-100 dark:border-white/5'
+                    }`}>
+                       {/* Efecto Flash para Críticos */}
+                       {isCritical && <div className="absolute inset-0 bg-red-500/5 animate-pulse pointer-events-none"></div>}
+                       
+                       <div className="flex justify-between items-start mb-6 relative z-10">
+                          <div className="flex items-center gap-3">
+                             <div className={`p-3 rounded-2xl ${isCritical ? 'bg-red-100 text-red-600' : isWarning ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-500'}`}>
+                                {isCritical ? <AlertCircle size={24} className="animate-bounce"/> : isWarning ? <AlertTriangle size={24}/> : <CalendarClock size={24}/>}
+                             </div>
+                             <div>
+                                <h4 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">{v.vehicleName}</h4>
+                                <h3 className={`text-xl font-robust italic ${isCritical ? 'text-red-700' : isWarning ? 'text-amber-700' : 'text-bordeaux-950 dark:text-white'}`}>{v.tipo}</h3>
+                             </div>
+                          </div>
+                          <div className="text-right">
+                             <span className={`text-4xl font-robust italic leading-none ${isCritical ? 'text-red-600' : isWarning ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                {days}
+                             </span>
+                             <p className="text-[7px] font-black uppercase text-gray-400">Días Restantes</p>
+                          </div>
+                       </div>
+                       
+                       <div className="space-y-3 relative z-10 bg-white/50 dark:bg-black/20 p-4 rounded-xl border border-black/5">
+                          <div className="flex justify-between items-center text-xs font-bold">
+                             <span className="text-gray-500 flex items-center gap-2"><CalendarClock size={12}/> Vencimiento</span>
+                             <span className="text-bordeaux-950 dark:text-white">{v.vencimiento}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs font-bold">
+                             <span className="text-gray-500 flex items-center gap-2"><HandCoins size={12}/> Costo Estimado</span>
+                             <span className="text-bordeaux-950 dark:text-white">R$ {v.monto}</span>
+                          </div>
+                       </div>
+
+                       <button onClick={() => setVencimientos(vencimientos.filter(x => x.id !== v.id))} className="absolute bottom-4 right-4 p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all z-20"><Trash2 size={16}/></button>
+                    </div>
+                 );
+              })}
            </div>
         </div>
       )}
@@ -527,10 +1008,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                      </button>
                   </div>
 
+                  {/* Collapsible History Section */}
                   <div className="space-y-4">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Wrench size={12}/> Historial Técnico</p>
-                    {logs.map(log => (
-                      <div key={log.id} className="bg-gray-50 dark:bg-dark-base p-6 rounded-[2.5rem] border border-gray-200 dark:border-white/5 space-y-4 hover:border-gold/30 transition-all">
+                     <button 
+                        onClick={() => setExpandedMaintenance(prev => ({...prev, [v.id]: !prev[v.id]}))}
+                        className="w-full flex justify-between items-center text-[9px] font-black text-gray-400 uppercase tracking-widest ml-2 hover:text-bordeaux-800 transition-colors"
+                     >
+                        <span className="flex items-center gap-2"><Wrench size={12}/> Historial Técnico ({logs.length})</span>
+                        {expandedMaintenance[v.id] ? 'Ocultar' : 'Ver Detalles'}
+                     </button>
+                    
+                    {expandedMaintenance[v.id] && logs.map(log => (
+                      <div key={log.id} className="bg-gray-50 dark:bg-dark-base p-6 rounded-[2.5rem] border border-gray-200 dark:border-white/5 space-y-4 hover:border-gold/30 transition-all animate-slideUp">
                          <div className="flex flex-col md:flex-row gap-4">
                             <div className="flex-1 space-y-2">
                                <p className="text-[8px] font-black text-gray-400 uppercase">Descripción</p>

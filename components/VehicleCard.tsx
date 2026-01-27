@@ -93,6 +93,24 @@ const VehicleCard: React.FC<VehicleCardProps> = ({ vehicle, exchangeRate, reserv
           </div>
         </div>
 
+        {/* VISUAL SPECS SUMMARY STRIP */}
+        <div className="flex justify-around items-center py-4 border-y border-gray-100 dark:border-white/5 mx-2 bg-gray-50/50 dark:bg-white/5 rounded-2xl">
+           <div className="flex flex-col items-center gap-1.5">
+              <Users size={16} className="text-gold"/>
+              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{vehicle.asientos || 5} PAS.</span>
+           </div>
+           <div className="w-px h-6 bg-gray-200 dark:bg-white/10"></div>
+           <div className="flex flex-col items-center gap-1.5">
+              <Fuel size={16} className="text-gold"/>
+              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{vehicle.combustible || 'NAFTA'}</span>
+           </div>
+           <div className="w-px h-6 bg-gray-200 dark:bg-white/10"></div>
+           <div className="flex flex-col items-center gap-1.5">
+              <Gauge size={16} className="text-gold"/>
+              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{vehicle.transmision || 'AUT.'}</span>
+           </div>
+        </div>
+
         {/* ACCIONES DE FICHA */}
         <div className="grid grid-cols-2 gap-4">
           <button onClick={(e) => { e.stopPropagation(); setShowAvailability(!showAvailability); setShowDetails(false); }} 

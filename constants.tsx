@@ -1,11 +1,17 @@
+
 import { Vehicle } from './types';
 
 // APP VERSIONING
-export const APP_VERSION = 'MASTER v3.5 GOLD';
+export const APP_VERSION = 'MASTER v3.7 - 2026 EDITION';
 
 export const FILTER_DATE_START = '2026-01-01';
-export const GOOGLE_SHEET_RESERVATIONS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vXXXXX/pub?output=csv';
-export const GOOGLE_SHEET_WEBAPP_URL = 'https://script.google.com/macros/s/XXXXX/exec';
+
+// Enlace directo a la exportación CSV de tu hoja 2026 (ID extraído de tu link)
+export const GOOGLE_SHEET_RESERVATIONS_URL = 'https://docs.google.com/spreadsheets/d/10hpWD6IiOFbQnfSniJGhVJvDZHStHiro/export?format=csv';
+
+// NOTA: Para guardar datos (POST) automáticamente en la hoja, necesitas desplegar un Google Apps Script.
+// Mientras tanto, la app guardará localmente y leerá de la nube.
+export const GOOGLE_SHEET_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbx_YOUR_SCRIPT_ID_HERE/exec'; 
 
 export const INITIAL_FLOTA: Vehicle[] = [
   {

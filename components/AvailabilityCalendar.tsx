@@ -19,38 +19,61 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
   
   const t = TRANSLATIONS[language];
 
+  // LOGICA PRINCIPAL DE BLOQUEO DE FECHAS
   const occupiedDates = useMemo(() => {
     const occupied = new Set<string>();
-    const keyTerm = vehicleName.toLowerCase()
-      .replace(/toyota|hyundai|blanco|negro|gris|suv|familiar|compacto/g, '')
-      .trim();
+    
+    // Normalizar nombre del vehículo actual para comparar
+    // Ejemplo: "Toyota Vitz Blanco" -> "toyota vitz blanco"
+    const targetName = vehicleName.toLowerCase();
+    
+    // Extraer palabras clave principales (e.g. "vitz", "corolla", "tucson") para búsqueda flexible
+    // Si el nombre es "Toyota Vitz Blanco", keyWords = ["toyota", "vitz", "blanco"]
+    const targetKeywords = targetName.split(' ').filter(w => w.length > 2);
 
     reservations.forEach((r) => {
-      // Bloquear si está confirmado o completado (histórico)
       if (!r.inicio || (r.status !== 'Confirmed' && r.status !== 'Completed')) return;
       
       const resAuto = (r.auto || "").toLowerCase();
-      const isMatch = resAuto.includes(keyTerm) || keyTerm.includes(resAuto) || resAuto === vehicleName.toLowerCase();
+      
+      // Coincidencia estricta primero
+      let isMatch = resAuto === targetName;
+
+      // Si no hay coincidencia exacta, intentar coincidencia parcial inteligente
+      if (!isMatch) {
+         // Si la reserva contiene el nombre completo del vehículo (ej: Reserva="Toyota Vitz Blanco (Juan)" vs Auto="Toyota Vitz Blanco")
+         if (resAuto.includes(targetName)) isMatch = true;
+         // Si el vehículo contiene el nombre de la reserva (ej: Auto="Toyota Vitz Blanco" vs Reserva="Vitz Blanco")
+         else if (targetName.includes(resAuto)) isMatch = true;
+      }
       
       if (isMatch) {
+        // Función para parsear fechas YYYY-MM-DD (Formato ISO estandarizado por googleSheetService)
         const parseD = (s: string) => {
           if (!s) return null;
-          const datePart = s.split(' ')[0];
-          const parts = datePart.split(/[/-]/);
-          if (parts.length !== 3) return null;
-          let d, m, y;
-          if (parts[0].length === 4) { y = parseInt(parts[0]); m = parseInt(parts[1]) - 1; d = parseInt(parts[2]); }
-          else { d = parseInt(parts[0]); m = parseInt(parts[1]) - 1; y = parseInt(parts[2]); if (y < 100) y += 2000; }
-          const dt = new Date(y, m, d);
-          dt.setHours(0,0,0,0);
-          return dt;
+          // googleSheetService ya normaliza a YYYY-MM-DD
+          const parts = s.split('-');
+          if (parts.length === 3) {
+             const y = parseInt(parts[0]);
+             const m = parseInt(parts[1]) - 1;
+             const d = parseInt(parts[2]);
+             const dt = new Date(y, m, d);
+             dt.setHours(0,0,0,0);
+             return dt;
+          }
+          return null;
         };
 
         const start = parseD(r.inicio);
-        const end = parseD(r.fin);
+        // Si no hay fecha fin, asumimos 1 día
+        const end = r.fin ? parseD(r.fin) : start; 
+        
         if (start && end) {
           const tempDate = new Date(start);
-          while (tempDate <= end) {
+          const endDateObj = new Date(end);
+          
+          // Loop para bloquear CADA DÍA entre inicio y fin
+          while (tempDate <= endDateObj) {
             occupied.add(tempDate.toISOString().split('T')[0]);
             tempDate.setDate(tempDate.getDate() + 1);
           }
@@ -65,7 +88,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
     clickedDate.setHours(0,0,0,0);
 
     const dStr = clickedDate.toISOString().split('T')[0];
-    if (occupiedDates.has(dStr)) return;
+    if (occupiedDates.has(dStr)) return; // No permitir click en ocupados
 
     if (!selectionStart || (selectionStart && selectionEnd)) {
       setSelectionStart(clickedDate);
@@ -74,7 +97,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
       if (clickedDate < selectionStart) {
         setSelectionStart(clickedDate);
       } else {
-        // Verificar si hay ocupados en medio
+        // Verificar si hay días bloqueados en medio del rango seleccionado
         let temp = new Date(selectionStart);
         let blocked = false;
         while(temp <= clickedDate) {
@@ -84,8 +107,11 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
            }
            temp.setDate(temp.getDate() + 1);
         }
-        if(!blocked) setSelectionEnd(clickedDate);
-        else {
+        
+        if(!blocked) {
+           setSelectionEnd(clickedDate);
+        } else {
+          // Si hay bloqueo en medio, reiniciar selección
           setSelectionStart(clickedDate);
           setSelectionEnd(null);
         }
@@ -145,7 +171,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
               onClick={() => handleDateClick(day)} 
               className={`aspect-square flex flex-col items-center justify-center text-[9px] font-robust rounded-xl border transition-all relative cursor-pointer ${
                 status.isOccupied 
-                  ? 'bg-bordeaux-800 text-white border-bordeaux-900 font-black cursor-not-allowed' 
+                  ? 'bg-bordeaux-800 text-white border-bordeaux-900 font-black cursor-not-allowed shadow-inner' 
                   : status.isSelectionPoint 
                     ? 'bg-gold text-dark-base border-gold font-black scale-105 shadow-lg z-10' 
                     : status.isSelectionRange 
@@ -154,7 +180,7 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
               }`}
             >
               {day}
-              {status.isOccupied && <Lock size={7} className="mt-0.5 opacity-60" />}
+              {status.isOccupied && <Lock size={8} className="absolute bottom-1 right-1 opacity-50" />}
             </div>
           );
         })}

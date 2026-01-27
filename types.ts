@@ -91,6 +91,7 @@ export interface Reservation {
   signature?: string;
   includeInCalendar?: boolean;
   contractAccepted?: boolean;
+  obs?: string; // Nuevo campo para notas de cambios
 }
 
 export interface Gasto {
