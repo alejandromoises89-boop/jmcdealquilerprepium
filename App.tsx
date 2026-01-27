@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Vehicle, Reservation, Gasto, Breakdown } from './types';
-import { INITIAL_FLOTA, FILTER_DATE_START, Language, TRANSLATIONS } from './constants';
+import React, { useState, useEffect } from 'react';
+import { Vehicle, Reservation, Gasto, Breakdown, MaintenanceRecord, ExpirationRecord } from './types';
+import { INITIAL_FLOTA, Language } from './constants';
 import { fetchBrlToPyg } from './services/exchangeService';
 import { fetchReservationsFromSheet, saveReservationToSheet } from './services/googleSheetService';
 import Navbar from './components/Navbar';
@@ -9,14 +9,7 @@ import VehicleGrid from './components/VehicleGrid';
 import AdminPanel from './components/AdminPanel';
 import LocationSection from './components/LocationSection';
 import SupportForm from './components/SupportForm';
-import { RefreshCw, BellRing, X, Landmark, Lock, MapPin, Phone, MessageCircle, ShieldCheck, Loader2, CloudUpload } from 'lucide-react';
-
-interface AppNotification {
-  id: string;
-  type: 'maintenance' | 'booking' | 'system' | 'critical';
-  title: string;
-  message: string;
-}
+import { RefreshCw, Lock, CloudUpload } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'reservas' | 'ubicacion' | 'asistencia' | 'admin'>('reservas');
@@ -40,6 +33,38 @@ const App: React.FC = () => {
     return [];
   });
 
+  const [gastos, setGastos] = useState<Gasto[]>(() => {
+    const saved = localStorage.getItem('jm_gastos');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return [];
+  });
+
+  const [mantenimientos, setMantenimientos] = useState<MaintenanceRecord[]>(() => {
+    const saved = localStorage.getItem('jm_mantenimientos');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return [];
+  });
+
+  const [vencimientos, setVencimientos] = useState<ExpirationRecord[]>(() => {
+    const saved = localStorage.getItem('jm_vencimientos');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return [];
+  });
+
+  const [breakdowns, setBreakdowns] = useState<Breakdown[]>(() => {
+    const saved = localStorage.getItem('jm_breakdowns');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return [];
+  });
+
   const [exchangeRate, setExchangeRate] = useState<number>(1550);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSavingCloud, setIsSavingCloud] = useState(false);
@@ -50,11 +75,15 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('jm_flota', JSON.stringify(flota));
     localStorage.setItem('jm_reservations', JSON.stringify(reservations));
+    localStorage.setItem('jm_gastos', JSON.stringify(gastos));
+    localStorage.setItem('jm_mantenimientos', JSON.stringify(mantenimientos));
+    localStorage.setItem('jm_vencimientos', JSON.stringify(vencimientos));
+    localStorage.setItem('jm_breakdowns', JSON.stringify(breakdowns));
     localStorage.setItem('jm_lang', language);
     if (darkMode) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
     localStorage.setItem('jm_theme', darkMode ? 'dark' : 'light');
-  }, [flota, reservations, language, darkMode]);
+  }, [flota, reservations, gastos, mantenimientos, vencimientos, breakdowns, language, darkMode]);
 
   const syncDataFromSheet = async () => {
     if (isSyncing) return;
@@ -80,12 +109,8 @@ const App: React.FC = () => {
     }
   };
 
-  // Función central para añadir reservas con guardado triple
   const handleNewReservation = async (newRes: Reservation) => {
-    // 1. Guardado Local Inmediato
     setReservations(prev => [newRes, ...prev]);
-    
-    // 2. Intento de guardado en la Nube (Google Sheets)
     setIsSavingCloud(true);
     try {
       const success = await saveReservationToSheet(newRes);
@@ -97,6 +122,12 @@ const App: React.FC = () => {
     } finally {
       setIsSavingCloud(false);
     }
+  };
+
+  const handleNewBreakdown = (newBreakdown: Breakdown) => {
+    setBreakdowns(prev => [newBreakdown, ...prev]);
+    alert(language === 'es' ? "Asistencia reportada con éxito." : "Support reported successfully.");
+    setActiveTab('reservas');
   };
 
   useEffect(() => {
@@ -140,9 +171,9 @@ const App: React.FC = () => {
         language={language}
         setLanguage={setLanguage}
         onShowContact={() => setShowContactModal(true)}
+        exchangeRate={exchangeRate}
       />
 
-      {/* Indicadores de Sincronización */}
       {(isSyncing || isSavingCloud) && (
         <div className="fixed top-28 right-6 z-[130] flex items-center gap-4 bg-white/95 dark:bg-dark-card/95 text-bordeaux-950 px-6 py-4 rounded-[2rem] shadow-2xl border border-gold/20 animate-slideUp">
           <div className="relative">
@@ -186,7 +217,7 @@ const App: React.FC = () => {
           />
         )}
         {activeTab === 'ubicacion' && <LocationSection />}
-        {activeTab === 'asistencia' && <SupportForm flota={flota} onSubmit={() => alert("Asistencia enviada.")} />}
+        {activeTab === 'asistencia' && <SupportForm flota={flota} onSubmit={handleNewBreakdown} />}
         {activeTab === 'admin' && isAdminUnlocked && (
           <AdminPanel 
             flota={flota} 
@@ -194,14 +225,19 @@ const App: React.FC = () => {
             reservations={reservations} 
             setReservations={setReservations} 
             onDeleteReservation={id => setReservations(reservations.filter(r => r.id !== id))} 
-            onAddReservation={handleNewReservation} // Nueva prop para guardado sincronizado
-            gastos={[]} 
-            setGastos={()=>{}} 
+            onAddReservation={handleNewReservation}
+            gastos={gastos} 
+            setGastos={setGastos} 
+            mantenimientos={mantenimientos}
+            setMantenimientos={setMantenimientos}
+            vencimientos={vencimientos}
+            setVencimientos={setVencimientos}
             exchangeRate={exchangeRate} 
             onSyncSheet={syncDataFromSheet} 
             isSyncing={isSyncing} 
-            breakdowns={[]} 
-            setBreakdowns={()=>{}} 
+            breakdowns={breakdowns} 
+            setBreakdowns={setBreakdowns} 
+            language={language}
           />
         )}
       </main>

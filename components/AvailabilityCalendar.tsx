@@ -19,7 +19,6 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
   
   const t = TRANSLATIONS[language];
 
-  // Unificamos todas las fechas ocupadas en un solo mapa de estado
   const occupiedDates = useMemo(() => {
     const occupied = new Set<string>();
     const keyTerm = vehicleName.toLowerCase()
@@ -27,7 +26,9 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
       .trim();
 
     reservations.forEach((r) => {
-      if (!r.inicio || r.status === 'Cancelled' || r.status === 'Completed') return;
+      // Bloquear si está confirmado o completado (histórico)
+      if (!r.inicio || (r.status !== 'Confirmed' && r.status !== 'Completed')) return;
+      
       const resAuto = (r.auto || "").toLowerCase();
       const isMatch = resAuto.includes(keyTerm) || keyTerm.includes(resAuto) || resAuto === vehicleName.toLowerCase();
       
@@ -59,13 +60,12 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
     return occupied;
   }, [vehicleName, reservations]);
 
-  // Manejo de la selección de fechas con delay de 2 segundos
   const handleDateClick = (day: number) => {
     const clickedDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
     clickedDate.setHours(0,0,0,0);
 
     const dStr = clickedDate.toISOString().split('T')[0];
-    if (occupiedDates.has(dStr)) return; // No permitir seleccionar días alquilados
+    if (occupiedDates.has(dStr)) return;
 
     if (!selectionStart || (selectionStart && selectionEnd)) {
       setSelectionStart(clickedDate);
@@ -74,7 +74,21 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
       if (clickedDate < selectionStart) {
         setSelectionStart(clickedDate);
       } else {
-        setSelectionEnd(clickedDate);
+        // Verificar si hay ocupados en medio
+        let temp = new Date(selectionStart);
+        let blocked = false;
+        while(temp <= clickedDate) {
+           if(occupiedDates.has(temp.toISOString().split('T')[0])) {
+             blocked = true;
+             break;
+           }
+           temp.setDate(temp.getDate() + 1);
+        }
+        if(!blocked) setSelectionEnd(clickedDate);
+        else {
+          setSelectionStart(clickedDate);
+          setSelectionEnd(null);
+        }
       }
     }
   };
@@ -83,10 +97,9 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
     if (selectionStart && selectionEnd && onDateRangeSelected) {
       const timer = setTimeout(() => {
         onDateRangeSelected(selectionStart, selectionEnd);
-        // Opcional: limpiar selección después de enviar
         setSelectionStart(null);
         setSelectionEnd(null);
-      }, 2000);
+      }, 800);
       return () => clearTimeout(timer);
     }
   }, [selectionStart, selectionEnd, onDateRangeSelected]);
@@ -99,78 +112,57 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let i = 1; i <= daysInMonth; i++) days.push(i);
 
-  const isInRange = (day: number) => {
-    if (!selectionStart || !selectionEnd) return false;
+  const getDayStatus = (day: number) => {
+    if (!day) return null;
     const d = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
     d.setHours(0,0,0,0);
-    return d >= selectionStart && d <= selectionEnd;
-  };
-
-  const isSelected = (day: number) => {
-    const d = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-    d.setHours(0,0,0,0);
-    return (selectionStart && d.getTime() === selectionStart.getTime()) || 
-           (selectionEnd && d.getTime() === selectionEnd.getTime());
+    const dStr = d.toISOString().split('T')[0];
+    
+    const isOccupied = occupiedDates.has(dStr);
+    const isSelectionPoint = (selectionStart && d.getTime() === selectionStart.getTime()) || (selectionEnd && d.getTime() === selectionEnd.getTime());
+    const isSelectionRange = selectionStart && selectionEnd && d > selectionStart && d < selectionEnd;
+    
+    return { isOccupied, isSelectionPoint, isSelectionRange };
   };
 
   return (
-    <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-100 dark:border-gold/10 p-4 space-y-4 shadow-sm" onClick={(e) => e.stopPropagation()}>
-      <div className="flex justify-between items-center bg-gray-50 dark:bg-dark-base p-2 rounded-xl">
-        <button 
-          onClick={(e) => { e.stopPropagation(); setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1)); }} 
-          className="p-1.5 hover:bg-white dark:hover:bg-dark-elevated rounded-lg text-bordeaux-800 dark:text-gold transition-all"
-        >
-          <ChevronLeft size={18}/>
-        </button>
-        <div className="text-center">
-            <p className="text-[7px] font-black text-gold uppercase tracking-[0.3em] leading-none mb-1">Disponibilidad Real</p>
-            <h4 className="text-[10px] font-robust text-bordeaux-950 dark:text-white uppercase italic">{monthName}</h4>
-        </div>
-        <button 
-          onClick={(e) => { e.stopPropagation(); setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1)); }} 
-          className="p-1.5 hover:bg-white dark:hover:bg-dark-elevated rounded-lg text-bordeaux-800 dark:text-gold transition-all"
-        >
-          <ChevronRight size={18}/></button>
+    <div className="bg-white dark:bg-dark-card rounded-[2rem] border border-gray-100 dark:border-gold/10 p-6 space-y-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="flex justify-between items-center bg-gray-50 dark:bg-dark-base p-3 rounded-2xl">
+        <button onClick={(e) => { e.stopPropagation(); setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1)); }} className="p-2 hover:bg-white dark:hover:bg-dark-elevated rounded-xl text-bordeaux-800 dark:text-gold transition-all"><ChevronLeft size={20}/></button>
+        <div className="text-center"><p className="text-[7px] font-black text-gold uppercase tracking-[0.3em] leading-none mb-1">Disponibilidad Platinum</p><h4 className="text-[10px] font-robust text-bordeaux-950 dark:text-white uppercase italic">{monthName}</h4></div>
+        <button onClick={(e) => { e.stopPropagation(); setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1)); }} className="p-2 hover:bg-white dark:hover:bg-dark-elevated rounded-xl text-bordeaux-800 dark:text-gold transition-all"><ChevronRight size={20}/></button>
       </div>
-
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1.5">
         {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(d => <div key={d} className="text-[8px] font-black text-gray-300 text-center py-1">{d}</div>)}
         {days.map((day, idx) => {
           if (!day) return <div key={`empty-${idx}`} />;
-          const dObj = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-          dObj.setHours(0,0,0,0);
-          const dStr = dObj.toISOString().split('T')[0];
-          const isOccupied = occupiedDates.has(dStr);
-          const selected = isSelected(day);
-          const inRange = isInRange(day);
+          const status = getDayStatus(day);
+          if (!status) return null;
 
           return (
             <div 
               key={day} 
-              onClick={() => handleDateClick(day)}
-              className={`aspect-square flex flex-col items-center justify-center text-[9px] font-robust rounded-lg border transition-all relative cursor-pointer ${
-                isOccupied 
-                  ? 'bg-bordeaux-800 text-white border-bordeaux-900 font-black cursor-not-allowed'
-                  : selected || inRange
-                    ? 'bg-gold text-dark-base border-gold font-black z-10 scale-105 shadow-lg'
-                    : 'bg-white dark:bg-dark-elevated text-gray-700 dark:text-white border-gray-50 dark:border-white/5 hover:border-gold/30'
+              onClick={() => handleDateClick(day)} 
+              className={`aspect-square flex flex-col items-center justify-center text-[9px] font-robust rounded-xl border transition-all relative cursor-pointer ${
+                status.isOccupied 
+                  ? 'bg-bordeaux-800 text-white border-bordeaux-900 font-black cursor-not-allowed' 
+                  : status.isSelectionPoint 
+                    ? 'bg-gold text-dark-base border-gold font-black scale-105 shadow-lg z-10' 
+                    : status.isSelectionRange 
+                      ? 'bg-gold/30 text-bordeaux-950 border-gold/40' 
+                      : 'bg-white dark:bg-dark-elevated text-gray-700 dark:text-white border-gray-50 dark:border-white/5 hover:border-gold/30'
               }`}
             >
               {day}
-              {isOccupied && <Lock size={7} className="mt-0.5 opacity-60" />}
+              {status.isOccupied && <Lock size={7} className="mt-0.5 opacity-60" />}
             </div>
           );
         })}
       </div>
-      
-      <div className="pt-2 border-t dark:border-white/5 flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 bg-bordeaux-800 rounded-full"></div>
-          <p className="text-[7px] font-black text-gray-400 uppercase tracking-widest">ALQUILADO / BLOQUEADO</p>
-        </div>
-        {selectionStart && !selectionEnd && (
-          <p className="text-[7px] font-black text-gold animate-pulse uppercase tracking-widest">Seleccione fecha de entrega...</p>
-        )}
+      <div className="flex items-center justify-center gap-6 pt-2 border-t dark:border-white/5">
+        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-bordeaux-800 rounded-sm"></div><span className="text-[7px] font-black text-gray-400 uppercase">Ocupado</span></div>
+        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-gold rounded-sm"></div><span className="text-[7px] font-black text-gray-400 uppercase">Selección</span></div>
+        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-white dark:bg-dark-elevated border border-gray-100 dark:border-white/5 rounded-sm"></div><span className="text-[7px] font-black text-gray-400 uppercase">Libre</span></div>
       </div>
     </div>
   );

@@ -11,7 +11,6 @@ const parseCSV = (text: string): string[][] => {
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
     const nextChar = text[i + 1];
-
     if (inQuotes) {
       if (char === '"' && nextChar === '"') {
         currentField += '"'; i++;
@@ -43,16 +42,12 @@ const parseCSV = (text: string): string[][] => {
   return result;
 };
 
-// Función robusta para parsear montos de la planilla (maneja 1.750,00 -> 1750.00)
 const parseSheetAmount = (val: string): number => {
   if (!val) return 0;
-  // Si contiene coma y punto, asumimos formato 1.234,56
-  // Eliminamos puntos de miles y cambiamos coma por punto decimal
   let clean = val.replace(/\s/g, '');
   if (clean.includes(',') && clean.includes('.')) {
     clean = clean.replace(/\./g, '').replace(',', '.');
   } else if (clean.includes(',')) {
-    // Si solo tiene coma, es el decimal
     clean = clean.replace(',', '.');
   }
   const num = parseFloat(clean.replace(/[^0-9.]/g, ''));
@@ -62,15 +57,12 @@ const parseSheetAmount = (val: string): number => {
 export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000); 
-
   try {
     const response = await fetch(`${GOOGLE_SHEET_RESERVATIONS_URL}&cache_bust=${Date.now()}`, {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
-
     if (!response.ok) return null;
-
     const csvText = await response.text();
     if (csvText.includes('<!DOCTYPE html>')) return null;
 
@@ -78,9 +70,7 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
     if (rows.length < 2) return [];
 
     const headers = rows[0].map(h => h.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
-    
-    // Sincronización desde la fila 98 (índice 97) para registros 2026 en adelante
-    const dataRows = rows.slice(97);
+    const dataRows = rows.slice(1);
 
     return dataRows.map((row, index): Reservation => {
       const getVal = (possibleHeaders: string[]) => {
@@ -91,32 +81,24 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
         }
         return '';
       };
-
       const cliente = getVal(['cliente', 'nombrecompleto', 'nombre', 'socio', 'arrendatario']);
       const email = getVal(['email', 'correo', 'mail']) || 'cliente@jmasociados.com';
       const docTypeRaw = getVal(['documenttype', 'tipodocumento', 'tipo']).toUpperCase();
       const documentType: 'CI' | 'RG' | 'Pasaporte' = (docTypeRaw === 'RG' || docTypeRaw === 'PASAPORTE') ? (docTypeRaw as any) : 'CI';
-      
       const salida = getVal(['inicio', 'salida', 'desde', 'start', 'fecha', 'fechadesalida']);
       const entrega = getVal(['fin', 'entrega', 'hasta', 'end', 'fechadeentrega']);
       const auto = getVal(['auto', 'vehiculo', 'alquilado', 'unidad', 'modelo']);
       const totalStr = getVal(['total', 'monto', 'precio', 'valor', 'totalbrl']);
-      
       const totalNum = parseSheetAmount(totalStr);
+      const statusRaw = getVal(['status', 'estado']);
+      const status: Reservation['status'] = (['Requested', 'Confirmed', 'Completed', 'Cancelled'].includes(statusRaw) ? statusRaw : 'Confirmed') as any;
 
       return {
-        id: `CLOUD-R98-${index}-${Date.now()}`,
+        id: `CLOUD-${index}-${Date.now()}`,
         cliente: cliente || 'Socio Externo',
-        email: email,
-        ci: 'SINCRO-NUBE',
-        documentType: documentType,
-        celular: '---',
-        auto: auto || 'Unidad No Definida',
-        inicio: salida,
-        fin: entrega || salida,
-        total: totalNum,
-        status: 'Confirmed',
-        includeInCalendar: true
+        email: email, ci: 'SINCRO-NUBE', documentType: documentType, celular: '---',
+        auto: auto || 'Unidad No Definida', inicio: salida, fin: entrega || salida,
+        total: totalNum, status: status, includeInCalendar: true
       };
     }).filter(r => r.inicio && r.auto && r.auto !== 'Unidad No Definida');
   } catch (error) {

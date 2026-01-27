@@ -1,528 +1,558 @@
 
-import React, { useState, useMemo } from 'react';
-import { Vehicle, Reservation, Gasto, Breakdown, ChecklistLog } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Vehicle, Reservation, Gasto, MaintenanceRecord, ExpirationRecord, ChecklistLog, InspectionItem } from '../types';
 import { 
-  RefreshCw, Car, ShieldCheck, Search, 
-  Trash2, X, Calendar, PieChart, 
-  Save, Settings2, Gauge, CreditCard, FileText, 
-  CheckCircle2, Wrench, Droplets, Disc, Sparkles,
-  LogOut, LogIn, Fuel, Brush, UserCheck, PackageOpen, ImageIcon, Type, ArrowRight, Upload, Download, Eye, Plus,
-  Filter
+  Landmark, FileText, Wrench, Search, Plus, Trash2, Printer, 
+  CheckCircle2, AlertTriangle, UserPlus, Download, TrendingUp, TrendingDown,
+  ArrowRight, PieChart as PieChartIcon, BarChart3, ClipboardList, 
+  Car, MessageCircle, FileSpreadsheet, ShieldCheck, 
+  Edit3, X, Settings, User, CreditCard, Check, AlertCircle, Bell
 } from 'lucide-react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip, ResponsiveContainer 
-} from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
 
 interface AdminPanelProps {
   flota: Vehicle[];
   setFlota: (flota: Vehicle[]) => void;
   reservations: Reservation[];
   setReservations: (res: Reservation[]) => void;
-  onAddReservation?: (res: Reservation) => void; // Nueva prop
   onDeleteReservation?: (id: string) => void;
   gastos: Gasto[];
   setGastos: (gastos: Gasto[]) => void;
+  mantenimientos: MaintenanceRecord[];
+  setMantenimientos: (records: MaintenanceRecord[]) => void;
+  vencimientos: ExpirationRecord[];
+  setVencimientos: (records: ExpirationRecord[]) => void;
   exchangeRate: number;
-  onSyncSheet: () => Promise<void>;
-  isSyncing: boolean;
-  breakdowns: Breakdown[];
-  setBreakdowns: (b: Breakdown[]) => void;
+  language?: string;
 }
 
+// Subcomponente para Notificaciones Flotantes
+const NotificationCenter: React.FC<{ alerts: string[] }> = ({ alerts }) => {
+  if (alerts.length === 0) return null;
+  return (
+    <div className="fixed top-24 right-6 z-[150] space-y-3 animate-slideUp pointer-events-none">
+      {alerts.map((alert, idx) => (
+        <div key={idx} className="bg-white/95 dark:bg-dark-card/95 backdrop-blur-md p-4 rounded-2xl shadow-2xl border-l-4 border-rose-500 flex items-start gap-3 w-80 pointer-events-auto">
+          <div className="bg-rose-100 dark:bg-rose-900/30 p-2 rounded-full text-rose-600">
+             <AlertTriangle size={16} />
+          </div>
+          <div>
+            <h4 className="text-[10px] font-black uppercase text-rose-600 tracking-widest">Atención Requerida</h4>
+            <p className="text-xs font-bold dark:text-gray-200 leading-tight mt-1">{alert}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const AdminPanel: React.FC<AdminPanelProps> = ({ 
-  flota, setFlota, reservations, setReservations, onAddReservation, onDeleteReservation, exchangeRate, onSyncSheet, isSyncing
+  flota = [], setFlota, reservations = [], setReservations, onDeleteReservation, 
+  exchangeRate, gastos = [], setGastos, mantenimientos = [], setMantenimientos, 
+  vencimientos = [], setVencimientos
 }) => {
-  const [activeSection, setActiveSection] = useState<'finanzas' | 'flota' | 'reservas' | 'contratos'>('finanzas');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
-  
-  const [opModal, setOpModal] = useState<{resId: string, type: 'delivery' | 'reception'} | null>(null);
-  const [opLog, setOpLog] = useState<ChecklistLog | null>(null);
+  const [activeTab, setActiveTab] = useState<'finanzas' | 'contratos' | 'taller' | 'checklists'>('finanzas');
+  const [finanzasFilter, setFinanzasFilter] = useState({ start: '', end: '', vehicle: '' });
+  const [showManualBooking, setShowManualBooking] = useState(false);
+  const [selectedContract, setSelectedContract] = useState<Reservation | null>(null);
+  const [manualRes, setManualRes] = useState({ cliente: '', auto: '', inicio: '', fin: '', total: 0 });
+  const [notifications, setNotifications] = useState<string[]>([]);
+  const [showNewChecklist, setShowNewChecklist] = useState<string | null>(null); // vehicleId for modal
 
-  // State for manual contract form
-  const [manualForm, setManualForm] = useState({
-    cliente: '',
-    auto: '',
-    inicio: new Date().toISOString().split('T')[0],
-    horaIni: '08:00',
-    fin: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-    horaFin: '17:00',
-    total: 0
-  });
-
-  const handleSaveManualContract = () => {
-    if (!manualForm.cliente || !manualForm.auto || !manualForm.inicio || !manualForm.fin) {
-      alert("Por favor complete todos los campos del contrato.");
-      return;
-    }
-
-    const newRes: Reservation = {
-      id: `MANUAL-${Date.now()}`,
-      cliente: manualForm.cliente.toUpperCase(),
-      email: 'manual@jmasociados.com',
-      ci: 'CARGA-MANUAL',
-      documentType: 'CI',
-      celular: '---',
-      auto: manualForm.auto,
-      inicio: `${manualForm.inicio} ${manualForm.horaIni}`,
-      fin: `${manualForm.fin} ${manualForm.horaFin}`,
-      total: manualForm.total,
-      status: 'Confirmed',
-      includeInCalendar: true
-    };
-
-    // Usamos la función de guardado sincronizado pasada desde App.tsx
-    if (onAddReservation) {
-      onAddReservation(newRes);
-    } else {
-      setReservations([newRes, ...reservations]);
-    }
-
-    setManualForm({
-      cliente: '',
-      auto: '',
-      inicio: new Date().toISOString().split('T')[0],
-      horaIni: '08:00',
-      fin: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-      horaFin: '17:00',
-      total: 0
-    });
-    alert("Contrato manual guardado. Las fechas han sido bloqueadas y se está sincronizando con la Nube.");
-  };
-
+  // --- LOGIC: FINANZAS ---
   const stats = useMemo(() => {
-    const list = reservations || [];
-    const validRes = list.filter(r => r.status !== 'Cancelled');
-    const totalBRL = validRes.reduce((sum, r) => sum + (r.total || 0), 0);
-    return { totalBRL };
-  }, [reservations]);
+    const filteredRes = reservations.filter(r => {
+      const matchV = finanzasFilter.vehicle ? r.auto === finanzasFilter.vehicle : true;
+      const matchD = (finanzasFilter.start && finanzasFilter.end) 
+        ? (new Date(r.inicio) >= new Date(finanzasFilter.start) && new Date(r.inicio) <= new Date(finanzasFilter.end))
+        : true;
+      return matchV && matchD;
+    });
 
-  const handleUpdateVehicle = (updatedVehicle: Vehicle) => {
-    const newFlota = flota.map(v => v.id === updatedVehicle.id ? updatedVehicle : v);
-    setFlota(newFlota);
-    setEditingVehicle(null);
-  };
+    const filteredGastos = gastos.filter(g => {
+      const matchV = finanzasFilter.vehicle ? g.vehicleId === finanzasFilter.vehicle : true;
+      const matchD = (finanzasFilter.start && finanzasFilter.end)
+        ? (new Date(g.fecha) >= new Date(finanzasFilter.start) && new Date(g.fecha) <= new Date(finanzasFilter.end))
+        : true;
+      return matchV && matchD;
+    });
 
-  const handleOpenOpModal = (resId: string, type: 'delivery' | 'reception') => {
-    const res = reservations.find(r => r.id === resId);
-    const existingLog = type === 'delivery' ? res?.deliveryLog : res?.receptionLog;
+    const income = filteredRes.reduce((s, r) => s + (r.total || 0), 0);
+    const expense = filteredGastos.reduce((s, g) => s + (g.monto || 0), 0) + mantenimientos.reduce((s, m) => s + m.monto, 0);
     
-    setOpLog(existingLog || {
-      fecha: new Date().toISOString(),
-      responsable: '',
-      combustible: '1/2',
-      limpiezaInterior: false,
-      limpiezaExterior: false,
-      auxilio: { gato: true, llaveRueda: true, triangulo: true, extintor: true, auxiliar: true },
-      observaciones: ''
-    });
-    setOpModal({ resId, type });
-  };
+    const barData = [
+      { name: 'Ingresos', val: income, fill: '#10b981' },
+      { name: 'Egresos', val: expense, fill: '#ef4444' }
+    ];
 
-  const handleSaveOpLog = () => {
-    if (!opModal || !opLog) return;
-    const newReservations = reservations.map(r => {
-      if (r.id === opModal.resId) {
-        return {
-          ...r,
-          [opModal.type === 'delivery' ? 'deliveryLog' : 'receptionLog']: opLog,
-          status: opModal.type === 'reception' ? 'Completed' : 'Confirmed'
-        };
+    const pieData = [
+      { name: 'Operativo', value: filteredGastos.filter(g => g.categoria === 'Operativo').reduce((s, g) => s + g.monto, 0) },
+      { name: 'Taller', value: mantenimientos.reduce((s, m) => s + m.monto, 0) },
+      { name: 'Seguros', value: filteredGastos.filter(g => g.categoria === 'Seguros').reduce((s, g) => s + g.monto, 0) },
+      { name: 'Cuotas', value: filteredGastos.filter(g => g.categoria === 'Cuotas').reduce((s, g) => s + g.monto, 0) }
+    ].filter(v => v.value > 0);
+
+    return { income, expense, balance: income - expense, barData, pieData };
+  }, [reservations, gastos, mantenimientos, finanzasFilter]);
+
+  // --- LOGIC: NOTIFICATIONS ---
+  useEffect(() => {
+    const alerts: string[] = [];
+    flota.forEach(v => {
+      const logs = mantenimientos.filter(m => m.vehicleId === v.id);
+      // Check last maintenance record for expiration
+      const lastService = logs.sort((a,b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+      
+      if (lastService) {
+        if (lastService.vencimientoKM && v.kilometrajeActual >= lastService.vencimientoKM) {
+          alerts.push(`Mantenimiento Vencido (KM): ${v.nombre} superó los ${lastService.vencimientoKM} KM.`);
+        } else if (lastService.vencimientoKM && (lastService.vencimientoKM - v.kilometrajeActual <= 500)) {
+           alerts.push(`Mantenimiento Próximo (KM): ${v.nombre} a ${lastService.vencimientoKM - v.kilometrajeActual} KM.`);
+        }
+
+        if (lastService.vencimientoFecha) {
+          const today = new Date();
+          const dueDate = new Date(lastService.vencimientoFecha);
+          const diffTime = dueDate.getTime() - today.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+          if (diffDays <= 0) {
+            alerts.push(`Mantenimiento Vencido (Fecha): ${v.nombre} venció el ${lastService.vencimientoFecha}.`);
+          } else if (diffDays <= 7) {
+            alerts.push(`Mantenimiento Próximo (Fecha): ${v.nombre} vence en ${diffDays} días.`);
+          }
+        }
       }
-      return r;
     });
-    setReservations(newReservations);
-    setOpModal(null);
+    setNotifications(alerts);
+  }, [flota, mantenimientos]);
+
+  const exportCSV = (type: string) => {
+    let headers = "ID,Cliente,Auto,Fecha,Total BRL\n";
+    let rows = reservations.map(r => `${r.id},${r.cliente},${r.auto},${r.inicio},${r.total}`).join("\n");
+    const blob = new Blob([headers + rows], { type: 'text/csv' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `JM_${type}_${Date.now()}.csv`;
+    link.click();
   };
 
-  const toggleChecklist = (key: keyof Required<Vehicle>['serviceChecklist']) => {
-    if (!editingVehicle) return;
-    const currentChecklist = editingVehicle.serviceChecklist || {
-      aceite: false, filtroAceite: false, filtroAire: false, frenos: false, alineacion: false, limpieza: false
-    };
-    setEditingVehicle({
-      ...editingVehicle,
-      serviceChecklist: { ...currentChecklist, [key]: !currentChecklist[key] }
-    });
-  };
-
-  const chartData = useMemo(() => {
-    const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    return months.map((month, index) => ({
-      name: month,
-      ingresos: (reservations || []).filter(r => {
-        const parts = r.inicio.split(' ')[0].split(/[/-]/);
-        let m = -1;
-        if (parts.length === 3) m = parseInt(parts[1]) - 1;
-        return m === index && r.status !== 'Cancelled';
-      }).reduce((sum, r) => sum + (r.total || 0), 0)
-    }));
-  }, [reservations]);
+  const COLORS = ['#800000', '#D4AF37', '#10b981', '#3b82f6'];
 
   return (
-    <div className="space-y-6 animate-slideUp pb-24">
-      {/* HEADER ADMIN */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white dark:bg-dark-card p-5 rounded-3xl border dark:border-gold/10 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-bordeaux-950 text-gold rounded-2xl border border-gold/20 shadow-xl"><ShieldCheck size={20}/></div>
-          <div><h2 className="text-2xl font-robust font-speed dark:text-white leading-none italic uppercase tracking-tight">Central <span className="text-gold">Maestra</span></h2><p className="text-[8px] font-bold text-gray-400 uppercase tracking-[0.4em] mt-1.5 leading-none">Terminal Protocolo 2026</p></div>
+    <div className="space-y-8 animate-slideUp pb-40 max-w-full overflow-x-hidden relative">
+      <NotificationCenter alerts={notifications} />
+
+      {/* HEADER */}
+      <div className="px-4 flex justify-between items-center">
+        <div>
+          <h2 className="text-3xl font-robust text-bordeaux-950 dark:text-white italic tracking-tighter leading-none">TERMINAL MASTER v3.6</h2>
+          <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em] mt-2 flex items-center gap-2">
+            <ShieldCheck size={14}/> Centro de Inteligencia Operativa
+          </p>
         </div>
-        <button onClick={onSyncSheet} disabled={isSyncing} className="px-5 py-2.5 bordeaux-gradient text-white rounded-xl font-robust text-[9px] flex items-center gap-2 shadow-lg active:scale-95 disabled:opacity-50">
-          <RefreshCw className={isSyncing ? 'animate-spin' : ''} size={14}/> {isSyncing ? 'SYNC NUBE' : 'ACTUALIZAR NUBE'}
-        </button>
+        <div className="flex gap-2 relative">
+           <button onClick={() => window.print()} className="p-4 bg-gray-950 text-white rounded-[1.5rem] shadow-2xl"><Printer size={20}/></button>
+           {notifications.length > 0 && (
+             <span className="absolute -top-2 -right-2 bg-rose-600 text-white text-[9px] font-black w-6 h-6 rounded-full flex items-center justify-center animate-bounce shadow-lg">{notifications.length}</span>
+           )}
+        </div>
       </div>
 
       {/* TABS MENU */}
-      <div className="flex bg-white dark:bg-dark-elevated p-1 rounded-2xl border dark:border-white/5 overflow-x-auto gap-1 shadow-inner">
+      <div className="flex bg-white dark:bg-dark-elevated p-2 rounded-[3rem] border-2 dark:border-white/5 overflow-x-auto gap-2 scrollbar-hide shadow-xl">
         {[
-          { id: 'finanzas', label: 'BALANCE', icon: PieChart },
-          { id: 'flota', label: 'FICHA TÉCNICA', icon: Car },
-          { id: 'reservas', label: 'LIBRO VIP', icon: Calendar },
-          { id: 'contratos', label: 'CONTRATOS', icon: FileText },
+          {id:'finanzas', icon: Landmark, label: 'Finanzas'},
+          {id:'contratos', icon: FileText, label: 'Contratos'},
+          {id:'taller', icon: Wrench, label: 'Taller & Alertas'},
+          {id:'checklists', icon: ClipboardList, label: 'Inspección Pro'}
         ].map(tab => (
-          <button key={tab.id} onClick={() => setActiveSection(tab.id as any)} 
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-[9px] font-robust transition-all whitespace-nowrap ${
-              activeSection === tab.id ? 'bg-bordeaux-950 text-white shadow-md' : 'text-gray-400 hover:text-bordeaux-800 dark:hover:text-gold'
+          <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} 
+            className={`flex flex-col items-center justify-center gap-1.5 min-w-[100px] py-5 rounded-[2.2rem] transition-all ${
+              activeTab === tab.id ? 'bg-bordeaux-950 text-white shadow-lg scale-105' : 'text-gray-400 hover:text-bordeaux-800'
             }`}>
-            <tab.icon size={12} /> {tab.label}
+            <tab.icon size={18} />
+            <span className="text-[8px] font-black uppercase tracking-widest">{tab.label}</span>
           </button>
         ))}
       </div>
 
-      {/* SECCIÓN: CONTRATOS (SÓLO CARGA MANUAL) */}
-      {activeSection === 'contratos' && (
-        <div className="space-y-8 animate-fadeIn">
-          {/* FORMULARIO DE CARGA MANUAL - TERMINAL DE BLOQUEO */}
-          <div className="bg-white dark:bg-dark-card p-8 rounded-[3rem] border-2 border-gold/20 shadow-xl space-y-8">
-             <div className="flex items-center gap-4 border-b dark:border-white/5 pb-6">
-                <div className="p-4 bg-gold/10 text-gold rounded-[1.5rem]"><Plus size={32}/></div>
-                <div>
-                   <h3 className="text-2xl font-robust text-bordeaux-950 dark:text-white uppercase italic leading-none">Terminal de Bloqueo JM</h3>
-                   <p className="text-[10px] font-black text-gold uppercase tracking-[0.3em] mt-2">Carga manual de contratos para reserva inmediata de unidades</p>
-                </div>
+      {/* --- FINANZAS --- */}
+      {activeTab === 'finanzas' && (
+        <div className="space-y-6 animate-fadeIn px-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+             <div className="bg-white dark:bg-dark-card p-8 rounded-[3rem] border-b-8 border-emerald-500 shadow-xl">
+                <p className="text-[9px] font-black text-emerald-600 uppercase mb-2">Ingresos</p>
+                <h3 className="text-4xl font-robust dark:text-white italic">R$ {stats.income.toLocaleString()}</h3>
+                <p className="text-[11px] font-bold text-gray-400 mt-2 italic">Gs. {(stats.income * exchangeRate).toLocaleString()}</p>
              </div>
+             <div className="bg-white dark:bg-dark-card p-8 rounded-[3rem] border-b-8 border-rose-500 shadow-xl">
+                <p className="text-[9px] font-black text-rose-600 uppercase mb-2">Egresos</p>
+                <h3 className="text-4xl font-robust dark:text-white italic">R$ {stats.expense.toLocaleString()}</h3>
+                <p className="text-[11px] font-bold text-gray-400 mt-2 italic">Gs. {(stats.expense * exchangeRate).toLocaleString()}</p>
+             </div>
+             <div className="bg-bordeaux-950 p-8 rounded-[3rem] border-2 border-gold/20 shadow-xl">
+                <p className="text-[9px] font-black text-gold uppercase mb-2">Neto</p>
+                <h3 className="text-4xl font-robust text-white italic">R$ {stats.balance.toLocaleString()}</h3>
+                <p className="text-[11px] font-bold text-gold/40 mt-2 italic">Gs. {(stats.balance * exchangeRate).toLocaleString()}</p>
+             </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+             <div className="bg-white dark:bg-dark-card p-10 rounded-[3.5rem] shadow-xl h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                   <BarChart data={stats.barData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
+                      <XAxis dataKey="name" axisLine={false} tick={{fontSize: 10, fontWeight: 900}} />
+                      <Tooltip />
+                      <Bar dataKey="val" radius={[15, 15, 0, 0]} />
+                   </BarChart>
+                </ResponsiveContainer>
+             </div>
+             <div className="bg-white dark:bg-dark-card p-10 rounded-[3.5rem] shadow-xl h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                   <PieChart>
+                      <Pie data={stats.pieData} innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value">
+                         {stats.pieData.map((_, i) => <Cell key={`c-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip />
+                   </PieChart>
+                </ResponsiveContainer>
+             </div>
+          </div>
+        </div>
+      )}
 
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                <div className="space-y-2">
-                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Arrendatario (Socio)</label>
-                   <input type="text" placeholder="NOMBRE COMPLETO" value={manualForm.cliente} onChange={e => setManualForm({...manualForm, cliente: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-5 text-sm font-bold outline-none border dark:border-white/5 focus:border-gold" />
-                </div>
-                <div className="space-y-2">
-                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Unidad (Vehículo)</label>
-                   <select value={manualForm.auto} onChange={e => setManualForm({...manualForm, auto: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-5 text-sm font-bold outline-none border dark:border-white/5 focus:border-gold">
-                      <option value="">SELECCIONE UNIDAD...</option>
-                      {flota.map(v => <option key={v.id} value={v.nombre}>{v.nombre} ({v.placa})</option>)}
+      {/* --- CONTRATOS --- */}
+      {activeTab === 'contratos' && (
+        <div className="space-y-6 px-2 animate-fadeIn">
+           <button onClick={() => setShowManualBooking(!showManualBooking)} className="w-full py-6 bg-gold/10 border-4 border-dashed border-gold text-gold rounded-[2.5rem] font-black text-[11px] uppercase tracking-[0.3em] flex items-center justify-center gap-4 hover:bg-gold/20 transition-all">
+              <UserPlus size={24}/> Nuevo Contrato Directo (Confirmar y Bloquear)
+           </button>
+
+           {showManualBooking && (
+             <form onSubmit={(e) => {
+               e.preventDefault();
+               const res: Reservation = {
+                 id: `JM-MAN-${Date.now()}`, cliente: manualRes.cliente.toUpperCase(), email: 'manual@jmasociados.com', ci: 'MANUAL', documentType: 'CI', celular: '---', auto: manualRes.auto, inicio: manualRes.inicio, fin: manualRes.fin, total: manualRes.total, status: 'Confirmed', includeInCalendar: true
+               };
+               setReservations([res, ...reservations]);
+               setShowManualBooking(false);
+               alert("Fechas bloqueadas en el calendario.");
+             }} className="bg-white dark:bg-dark-card p-10 rounded-[3.5rem] border-2 border-gold shadow-2xl space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                   <input type="text" placeholder="Cliente" required value={manualRes.cliente} onChange={e => setManualRes({...manualRes, cliente: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0" />
+                   <select required value={manualRes.auto} onChange={e => setManualRes({...manualRes, auto: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0">
+                      <option value="">Seleccionar Auto...</option>
+                      {flota.map(v => <option key={v.id} value={v.nombre}>{v.nombre}</option>)}
                    </select>
                 </div>
-                <div className="space-y-2">
-                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Inversión Total (BRL)</label>
-                   <input type="number" placeholder="0.00" value={manualForm.total} onChange={e => setManualForm({...manualForm, total: parseFloat(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-5 text-sm font-bold outline-none border dark:border-white/5 focus:border-gold" />
+                <div className="grid grid-cols-3 gap-4">
+                   <input type="date" required value={manualRes.inicio} onChange={e => setManualRes({...manualRes, inicio: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0" />
+                   <input type="date" required value={manualRes.fin} onChange={e => setManualRes({...manualRes, fin: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0" />
+                   <input type="number" placeholder="Total BRL" required value={manualRes.total} onChange={e => setManualRes({...manualRes, total: Number(e.target.value)})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0" />
                 </div>
-                <div className="space-y-2">
-                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Fecha Inicio</label>
-                   <div className="flex gap-2">
-                      <input type="date" value={manualForm.inicio} onChange={e => setManualForm({...manualForm, inicio: e.target.value})} className="flex-1 bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-4 py-5 text-xs font-bold outline-none border dark:border-white/5" />
-                      <input type="time" value={manualForm.horaIni} onChange={e => setManualForm({...manualForm, horaIni: e.target.value})} className="w-28 bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-2 py-5 text-xs font-bold outline-none border dark:border-white/5" />
+                <button type="submit" className="w-full py-6 bordeaux-gradient text-white rounded-[2rem] font-black uppercase tracking-widest">Confirmar Bloqueo de Fechas</button>
+             </form>
+           )}
+
+           <div className="space-y-4">
+             {reservations.map(r => (
+               <div key={r.id} onClick={() => setSelectedContract(r)} className="bg-white dark:bg-dark-card p-6 rounded-[2.5rem] border dark:border-white/5 flex justify-between items-center group hover:border-gold cursor-pointer transition-all">
+                  <div className="flex items-center gap-4">
+                     <FileText size={20} className="text-bordeaux-800"/>
+                     <div>
+                        <p className="text-sm font-black dark:text-white uppercase italic leading-none">{r.cliente}</p>
+                        <p className="text-[9px] text-gray-400 font-bold mt-1 uppercase">{r.auto} | {r.inicio}</p>
+                     </div>
+                  </div>
+                  <div className="text-right flex items-center gap-4">
+                     <p className="text-lg font-robust dark:text-white">R$ {r.total}</p>
+                     <button onClick={(e) => { e.stopPropagation(); onDeleteReservation?.(r.id); }} className="p-3 text-red-500 opacity-0 group-hover:opacity-100"><Trash2 size={16}/></button>
+                  </div>
+               </div>
+             ))}
+           </div>
+        </div>
+      )}
+
+      {/* --- TALLER (MEJORADO CON ALERTAS INTEGRADAS) --- */}
+      {activeTab === 'taller' && (
+        <div className="space-y-8 px-2 animate-fadeIn">
+           {flota.map(v => {
+             const logs = mantenimientos.filter(m => m.vehicleId === v.id);
+             // Verificar estado de alerta para este vehículo
+             const lastService = logs.sort((a,b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+             let alertStatus = 'OK';
+             if (lastService) {
+                if ((lastService.vencimientoKM && v.kilometrajeActual >= lastService.vencimientoKM) || (lastService.vencimientoFecha && new Date() >= new Date(lastService.vencimientoFecha))) {
+                   alertStatus = 'VENCIDO';
+                } else if ((lastService.vencimientoKM && lastService.vencimientoKM - v.kilometrajeActual <= 500)) {
+                   alertStatus = 'PROXIMO';
+                }
+             }
+
+             return (
+               <div key={v.id} className={`bg-white dark:bg-dark-card p-8 rounded-[3.5rem] border-2 shadow-xl space-y-6 relative overflow-hidden transition-all ${alertStatus === 'VENCIDO' ? 'border-red-500 shadow-red-500/20' : alertStatus === 'PROXIMO' ? 'border-gold shadow-gold/20' : 'border-gray-100 dark:border-white/5'}`}>
+                  {/* Etiqueta de Alerta */}
+                  {alertStatus !== 'OK' && (
+                    <div className={`absolute top-0 right-0 px-8 py-3 rounded-bl-[2.5rem] font-black text-[10px] uppercase tracking-widest text-white ${alertStatus === 'VENCIDO' ? 'bg-red-500' : 'bg-gold'}`}>
+                       {alertStatus === 'VENCIDO' ? 'MANTENIMIENTO VENCIDO' : 'MANTENIMIENTO PRÓXIMO'}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col md:flex-row items-center gap-8 border-b dark:border-white/5 pb-6">
+                     <div className="w-full md:w-48 h-32 rounded-3xl overflow-hidden bg-gray-50 border border-gray-100 relative group">
+                        <img src={v.img} className="w-full h-full object-contain p-2 transition-transform group-hover:scale-110"/>
+                     </div>
+                     <div className="flex-1 text-center md:text-left space-y-2">
+                        <h4 className="text-2xl font-robust dark:text-white uppercase italic">{v.nombre}</h4>
+                        <div className="flex flex-wrap justify-center md:justify-start gap-3">
+                           <span className="bg-gray-100 dark:bg-dark-elevated px-3 py-1 rounded-lg text-[9px] font-black text-gray-500 uppercase">Placa: {v.placa}</span>
+                           <span className="bg-gray-100 dark:bg-dark-elevated px-3 py-1 rounded-lg text-[9px] font-black text-bordeaux-800 uppercase">KM Actual: {v.kilometrajeActual}</span>
+                        </div>
+                     </div>
+                     <button onClick={() => {
+                       const newM: MaintenanceRecord = { 
+                          id: `M-${Date.now()}`, 
+                          vehicleId: v.id, 
+                          vehicleName: v.nombre, 
+                          fecha: new Date().toISOString().split('T')[0], 
+                          kilometraje: v.kilometrajeActual, 
+                          descripcion: 'Nuevo Mantenimiento', 
+                          monto: 0,
+                          tipo: 'Preventivo',
+                          vencimientoKM: v.kilometrajeActual + 5000,
+                          vencimientoFecha: new Date(Date.now() + 1000 * 60 * 60 * 24 * 90).toISOString().split('T')[0],
+                          realizado: true
+                       };
+                       setMantenimientos([...mantenimientos, newM]);
+                     }} className="p-4 bg-bordeaux-950 text-white rounded-2xl shadow-xl hover:scale-105 transition-transform flex items-center gap-2">
+                        <Plus size={18}/> <span className="text-[10px] font-black uppercase tracking-widest">Nuevo Registro</span>
+                     </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-2">Historial Técnico & Vencimientos</p>
+                    {logs.map(log => (
+                      <div key={log.id} className="bg-gray-50 dark:bg-dark-base p-6 rounded-[2.5rem] border border-gray-200 dark:border-white/5 space-y-4 hover:border-gold/30 transition-all">
+                         <div className="flex flex-col md:flex-row gap-4">
+                            <div className="flex-1 space-y-2">
+                               <p className="text-[8px] font-black text-gray-400 uppercase">Descripción del Trabajo</p>
+                               <input type="text" value={log.descripcion} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, descripcion: e.target.value} : m))} className="w-full bg-transparent border-b border-gray-300 text-sm font-bold dark:text-white outline-none focus:border-gold" />
+                            </div>
+                            <div className="w-full md:w-32 space-y-2">
+                               <p className="text-[8px] font-black text-gray-400 uppercase">Monto BRL</p>
+                               <input type="number" value={log.monto} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, monto: Number(e.target.value)} : m))} className="w-full bg-transparent border-b border-gray-300 text-sm font-black text-bordeaux-800 text-right outline-none focus:border-gold" />
+                            </div>
+                         </div>
+                         
+                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white dark:bg-dark-elevated p-4 rounded-2xl border border-gray-100 dark:border-white/5">
+                            <div className="space-y-1">
+                               <p className="text-[7px] font-black text-gray-400 uppercase">Fecha Realizado</p>
+                               <input type="date" value={log.fecha} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, fecha: e.target.value} : m))} className="bg-transparent text-[10px] font-bold w-full" />
+                            </div>
+                            <div className="space-y-1">
+                               <p className="text-[7px] font-black text-gray-400 uppercase">KM Realizado</p>
+                               <input type="number" value={log.kilometraje} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, kilometraje: Number(e.target.value)} : m))} className="bg-transparent text-[10px] font-bold w-full" />
+                            </div>
+                            <div className="space-y-1">
+                               <p className="text-[7px] font-black text-rose-500 uppercase">Vence (Fecha)</p>
+                               <input type="date" value={log.vencimientoFecha} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, vencimientoFecha: e.target.value} : m))} className="bg-transparent text-[10px] font-bold w-full text-rose-600" />
+                            </div>
+                            <div className="space-y-1">
+                               <p className="text-[7px] font-black text-rose-500 uppercase">Vence (KM)</p>
+                               <input type="number" value={log.vencimientoKM} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, vencimientoKM: Number(e.target.value)} : m))} className="bg-transparent text-[10px] font-bold w-full text-rose-600" />
+                            </div>
+                         </div>
+                         <div className="flex justify-end">
+                            <button onClick={() => setMantenimientos(mantenimientos.filter(x => x.id !== log.id))} className="text-[9px] font-black text-gray-300 hover:text-red-500 uppercase tracking-widest flex items-center gap-1"><Trash2 size={12}/> Eliminar Registro</button>
+                         </div>
+                      </div>
+                    ))}
+                  </div>
+               </div>
+             );
+           })}
+        </div>
+      )}
+
+      {/* --- INSPECCIÓN PROFESIONAL --- */}
+      {activeTab === 'checklists' && (
+        <div className="space-y-6 px-2 animate-fadeIn">
+           {flota.map(v => (
+             <div key={v.id} className="bg-white dark:bg-dark-card p-8 rounded-[3.5rem] border dark:border-white/5 shadow-xl space-y-6">
+                <div className="flex justify-between items-center">
+                   <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gray-100 rounded-xl overflow-hidden"><img src={v.img} className="w-full h-full object-contain"/></div>
+                      <h4 className="text-xl font-robust dark:text-white uppercase italic">{v.nombre}</h4>
                    </div>
-                </div>
-                <div className="space-y-2">
-                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Fecha Fin</label>
-                   <div className="flex gap-2">
-                      <input type="date" value={manualForm.fin} onChange={e => setManualForm({...manualForm, fin: e.target.value})} className="flex-1 bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-4 py-5 text-xs font-bold outline-none border dark:border-white/5" />
-                      <input type="time" value={manualForm.horaFin} onChange={e => setManualForm({...manualForm, horaFin: e.target.value})} className="w-28 bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-2 py-5 text-xs font-bold outline-none border dark:border-white/5" />
-                   </div>
-                </div>
-                <div className="flex items-end">
-                   <button onClick={handleSaveManualContract} className="w-full bordeaux-gradient text-white py-5 rounded-[2rem] font-robust text-[11px] uppercase tracking-[0.4em] shadow-xl flex items-center justify-center gap-3 transition-all active:scale-95">
-                      <Save size={18}/> Guardar y Bloquear
+                   <button onClick={() => setShowNewChecklist(v.id)} className="p-3 bg-bordeaux-950 text-gold rounded-2xl shadow-lg hover:scale-105 transition-transform flex items-center gap-2">
+                     <Plus size={18}/> <span className="hidden md:inline text-[9px] font-black uppercase tracking-widest">Nueva Inspección</span>
                    </button>
                 </div>
+
+                {/* Lista de Inspecciones */}
+                <div className="space-y-3">
+                   {(v.checklists || []).length === 0 && <p className="text-center text-[10px] text-gray-300 font-bold uppercase py-4">Sin inspecciones registradas</p>}
+                   {(v.checklists || []).map((c) => (
+                     <div key={c.id} className="bg-gray-50 dark:bg-dark-base p-6 rounded-[2rem] border dark:border-white/5 relative group hover:border-gold/30 transition-all">
+                        <div className="flex justify-between items-start mb-4">
+                           <div>
+                              <span className={`px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest text-white ${c.tipo === 'Check-In' ? 'bg-emerald-500' : 'bg-blue-500'}`}>{c.tipo}</span>
+                              <p className="text-[10px] font-bold text-gray-500 mt-2">{c.fecha} • {c.responsable} • {c.kilometraje} KM</p>
+                           </div>
+                           <button onClick={() => {
+                              if(confirm('¿Borrar inspección permanentemente?')) {
+                                 const updatedFlota = flota.map(veh => veh.id === v.id ? {...veh, checklists: veh.checklists?.filter(ck => ck.id !== c.id)} : veh);
+                                 setFlota(updatedFlota);
+                              }
+                           }} className="p-2 text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
+                        </div>
+                        
+                        {/* Resumen Visual */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                           {['Exterior', 'Interior', 'Mecánica', 'Docs'].map((cat, i) => {
+                              const items = i === 0 ? c.exterior : i === 1 ? c.interior : i === 2 ? c.mecanica : c.documentacion;
+                              const issues = (items || []).filter(x => x.status === 'bad').length;
+                              return (
+                                 <div key={i} className={`p-2 rounded-xl text-center border ${issues > 0 ? 'bg-red-50 border-red-100 text-red-600' : 'bg-green-50 border-green-100 text-green-600'}`}>
+                                    <p className="text-[7px] font-black uppercase">{cat}</p>
+                                    <p className="text-[9px] font-bold">{issues > 0 ? `${issues} Alertas` : 'OK'}</p>
+                                 </div>
+                              );
+                           })}
+                        </div>
+                     </div>
+                   ))}
+                </div>
              </div>
+           ))}
 
-             <div className="bg-gold/5 p-6 rounded-[2rem] border border-gold/20">
-                <p className="text-[9px] font-black text-gold uppercase mb-3 flex items-center gap-2"><ShieldCheck size={14}/> Protocolo de Bloqueo Maestro</p>
-                <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 leading-relaxed uppercase">
-                  Al guardar, se crea una reserva confirmada en el sistema local y se sincroniza con la nube. Esta unidad quedará marcada como "No Disponible" en todos los calendarios globales.
-                </p>
+           {/* Modal Nueva Inspección */}
+           {showNewChecklist && (
+             <div className="fixed inset-0 z-[200] flex items-center justify-center bg-dark-base/90 backdrop-blur-sm p-4">
+                <div className="bg-white dark:bg-dark-card w-full max-w-2xl h-[90vh] rounded-[3rem] p-8 overflow-y-auto shadow-2xl border-4 border-gold relative animate-slideUp">
+                   <button onClick={() => setShowNewChecklist(null)} className="absolute top-6 right-6 p-2 bg-gray-100 rounded-full hover:bg-red-100 hover:text-red-500 transition-all"><X size={20}/></button>
+                   <h3 className="text-2xl font-serif font-bold text-bordeaux-950 mb-6 text-center">Inspección Profesional</h3>
+                   <InspectionForm 
+                      vehicleId={showNewChecklist}
+                      flota={flota}
+                      setFlota={setFlota}
+                      onClose={() => setShowNewChecklist(null)}
+                   />
+                </div>
              </div>
-          </div>
-        </div>
-      )}
-
-      {/* SECCIÓN: RESERVAS (LIBRO VIP) */}
-      {activeSection === 'reservas' && (
-        <div className="bg-white dark:bg-dark-card rounded-2xl border dark:border-gold/10 shadow-sm overflow-hidden animate-fadeIn">
-          <div className="p-4 border-b dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-dark-elevated">
-            <h3 className="text-xs font-robust dark:text-white italic uppercase tracking-widest">Libro de Reservas VIP</h3>
-            <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input type="text" placeholder="SOCIO..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-9 pr-4 py-2 bg-white dark:bg-dark-base rounded-xl text-[9px] font-bold outline-none border dark:border-gold/10 focus:border-gold w-40 md:w-64" /></div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left compact-table">
-              <thead><tr className="bg-gray-50 dark:bg-bordeaux-950/40 text-bordeaux-800 dark:text-gold border-b dark:border-gold/10">
-                <th className="py-4 px-5">IDENTIFICACIÓN</th>
-                <th className="py-4 px-5">PERIODO ALQUILADO</th>
-                <th className="py-4 px-5 text-center">OPERATIVA</th>
-                <th className="py-4 px-5 text-center">ACCIONES</th>
-              </tr></thead>
-              <tbody className="divide-y divide-gray-50 dark:divide-white/5">
-                {(reservations || []).filter(r => r.cliente.toLowerCase().includes(searchTerm.toLowerCase())).map(res => {
-                  const isCloud = res.id.startsWith('CLOUD-R98-');
-                  const isManual = res.id.startsWith('MANUAL-');
-                  return (
-                    <tr key={res.id} className="hover:bg-gray-50 dark:hover:bg-gold/5 transition-all">
-                      <td className="py-4 px-5">
-                        <div className="flex items-center gap-2">
-                          {(isCloud || isManual) && <div className={`w-2.5 h-2.5 ${isManual ? 'bg-bordeaux-800' : 'bg-gold'} rounded-full shadow-sm`}></div>}
-                          <div>
-                              <p className="font-robust text-[11px] uppercase dark:text-white leading-none mb-1">{res.cliente}</p>
-                              <p className="text-[8px] text-gray-400 font-bold uppercase tracking-widest">{res.auto}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-5">
-                        <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-tight text-gray-600 dark:text-white bg-gray-50 dark:bg-dark-elevated px-4 py-2 rounded-xl border dark:border-white/5 inline-flex">
-                           <Calendar size={12} className="text-gold/50" />
-                           <span>{res.inicio.split(' ')[0]}</span>
-                           <ArrowRight size={10} className="text-gold" />
-                           <span>{res.fin.split(' ')[0]}</span>
-                        </div>
-                      </td>
-                      <td className="py-4 px-5">
-                        <div className="flex justify-center gap-2">
-                           <button onClick={() => handleOpenOpModal(res.id, 'delivery')} className={`p-2.5 rounded-xl border transition-all ${res.deliveryLog ? 'bg-green-500/10 border-green-500 text-green-500 shadow-sm' : 'bg-gray-50 dark:bg-dark-elevated border-gray-100 dark:border-white/5 text-gray-400 hover:text-gold'}`} title="Entrega">
-                             <LogOut size={16}/>
-                           </button>
-                           <button onClick={() => handleOpenOpModal(res.id, 'reception')} className={`p-2.5 rounded-xl border transition-all ${res.receptionLog ? 'bg-blue-500/10 border-blue-500 text-blue-500 shadow-sm' : 'bg-gray-50 dark:bg-dark-elevated border-gray-100 dark:border-white/5 text-gray-400 hover:text-gold'}`} title="Recepción">
-                             <LogIn size={16}/>
-                           </button>
-                        </div>
-                      </td>
-                      <td className="py-4 px-5 text-center">
-                        <button onClick={() => onDeleteReservation?.(res.id)} className="p-2 text-gray-400 hover:text-red-600 transition-colors"><Trash2 size={18}/></button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL OPERATIVO */}
-      {opModal && opLog && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-dark-base/90 backdrop-blur-md p-4">
-          <div className="bg-white dark:bg-dark-card w-full max-w-2xl max-h-[90vh] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col border-2 border-gold/20">
-            <div className="p-6 border-b dark:border-gold/10 flex justify-between items-center bg-white dark:bg-dark-card">
-              <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-2xl ${opModal.type === 'delivery' ? 'bg-bordeaux-800 text-white' : 'bg-blue-600 text-white'}`}>
-                  {opModal.type === 'delivery' ? <LogOut size={24}/> : <LogIn size={24}/>}
-                </div>
-                <div>
-                  <h3 className="text-xl font-robust text-bordeaux-950 dark:text-white uppercase italic">{opModal.type === 'delivery' ? 'Acta de Entrega' : 'Acta de Recepción'}</h3>
-                  <p className="text-[9px] font-black text-gold uppercase tracking-widest">Protocolo Maestro JM Asociados</p>
-                </div>
-              </div>
-              <button onClick={() => setOpModal(null)} className="p-3 text-gray-400"><X size={24}/></button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-gray-400 uppercase ml-2 flex items-center gap-2"><UserCheck size={12}/> Responsable Operativo</label>
-                    <input type="text" placeholder="NOMBRE DEL OPERADOR" value={opLog.responsable} onChange={e => setOpLog({...opLog, responsable: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-4 text-xs font-bold outline-none" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-gray-400 uppercase ml-2 flex items-center gap-2"><Fuel size={12}/> Nivel de Combustible</label>
-                    <div className="grid grid-cols-5 gap-1">
-                      {['1/8', '1/4', '1/2', '3/4', 'Full'].map(f => (
-                        <button key={f} onClick={() => setOpLog({...opLog, combustible: f as any})} className={`py-3 rounded-lg text-[9px] font-robust border transition-all ${opLog.combustible === f ? 'bg-gold border-gold text-dark-base shadow-lg scale-105' : 'bg-gray-50 dark:bg-dark-elevated border-gray-100 dark:border-white/5 text-gray-400'}`}>{f}</button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                   <label className="text-[8px] font-black text-gray-400 uppercase ml-2 flex items-center gap-2"><Brush size={12}/> Higiene y Limpieza</label>
-                   <div className="grid grid-cols-2 gap-2">
-                      <button onClick={() => setOpLog({...opLog, limpiezaInterior: !opLog.limpiezaInterior})} className={`flex items-center justify-center gap-2 py-4 rounded-2xl border transition-all ${opLog.limpiezaInterior ? 'bg-green-500/10 border-green-500 text-green-600' : 'bg-gray-50 dark:bg-dark-elevated border-gray-100 dark:border-white/5 text-gray-400'}`}>
-                        {opLog.limpiezaInterior ? <CheckCircle2 size={14}/> : <Sparkles size={14}/>}
-                        <span className="text-[9px] font-black uppercase">Interior</span>
-                      </button>
-                      <button onClick={() => setOpLog({...opLog, limpiezaExterior: !opLog.limpiezaExterior})} className={`flex items-center justify-center gap-2 py-4 rounded-2xl border transition-all ${opLog.limpiezaExterior ? 'bg-green-500/10 border-green-500 text-green-600' : 'bg-gray-50 dark:bg-dark-elevated border-gray-100 dark:border-white/5 text-gray-400'}`}>
-                        {opLog.limpiezaExterior ? <CheckCircle2 size={14}/> : <Droplets size={14}/>}
-                        <span className="text-[9px] font-black uppercase">Exterior</span>
-                      </button>
-                   </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                 <label className="text-[8px] font-black text-gray-400 uppercase ml-2 flex items-center gap-2"><PackageOpen size={12}/> Kit de Auxilio y Accesorios</label>
-                 <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                    {Object.entries(opLog.auxilio).map(([key, val]) => (
-                      <button key={key} onClick={() => setOpLog({...opLog, auxilio: {...opLog.auxilio, [key]: !val}})} className={`py-3 rounded-xl border text-[8px] font-black uppercase transition-all ${val ? 'bg-green-500/10 border-green-500 text-green-600' : 'bg-red-500/10 border-red-500 text-red-500'}`}>
-                        {key.replace(/([A-Z])/g, ' $1')}
-                      </button>
-                    ))}
-                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[8px] font-black text-gray-400 uppercase ml-2 flex items-center gap-2"><FileText size={12}/> Observaciones / Daños Detectados</label>
-                <textarea value={opLog.observaciones} onChange={e => setOpLog({...opLog, observaciones: e.target.value})} placeholder="Describa rayones, ruidos o faltantes..." className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-3xl px-6 py-4 text-xs font-bold outline-none border dark:border-white/5 min-h-[100px]" />
-              </div>
-            </div>
-
-            <div className="p-8 border-t dark:border-gold/10 bg-gray-50/50 dark:bg-dark-base">
-              <button onClick={handleSaveOpLog} className={`w-full py-5 rounded-[2rem] font-robust text-[11px] uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all active:scale-95 ${opLog.responsable ? 'bordeaux-gradient text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
-                <Save size={18}/> Finalizar Acta Operativa
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SECCIÓN: FICHA TÉCNICA */}
-      {activeSection === 'flota' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 animate-fadeIn">
-          {flota.map(v => (
-            <div key={v.id} className="bg-white dark:bg-dark-card rounded-3xl border dark:border-gold/10 p-5 space-y-4 shadow-sm relative group overflow-hidden">
-              <div className="flex gap-4 items-center">
-                <div className="w-20 h-20 bg-gray-50 dark:bg-dark-base rounded-2xl p-2 border dark:border-white/5 flex items-center justify-center shrink-0 shadow-inner"><img src={v.img} className="max-w-full max-h-full object-contain" /></div>
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-sm font-robust font-speed text-bordeaux-950 dark:text-white uppercase italic truncate leading-none">{v.nombre}</h4>
-                  <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-1.5">{v.placa}</p>
-                  <div className="flex items-center gap-2 mt-2"><span className="text-[8px] font-black text-gold uppercase px-2 py-0.5 bg-gold/10 rounded-full">{v.kilometrajeActual?.toLocaleString() || 0} KM</span></div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-[8px] font-bold text-gray-500 uppercase">
-                 <div className="p-2 bg-gray-50 dark:bg-dark-elevated rounded-xl border dark:border-white/5"><p className="text-gray-400">Precio Diaria</p><p className="text-bordeaux-800 dark:text-gold">R$ {v.precio.toFixed(2)}</p></div>
-                 <div className="p-2 bg-gray-50 dark:bg-dark-elevated rounded-xl border dark:border-white/5"><p className="text-gray-400">Seguro Vence</p><p className="text-bordeaux-800 dark:text-gold">{v.seguroVence || '---'}</p></div>
-              </div>
-              <button onClick={() => setEditingVehicle(v)} className="w-full flex items-center justify-center gap-2 py-3 bg-bordeaux-950 text-gold rounded-xl text-[9px] font-robust border border-gold/20 active:scale-95 transition-all"><Wrench size={12}/> AJUSTES TÉCNICOS</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* MODAL AJUSTES TÉCNICOS */}
-      {editingVehicle && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-dark-base/90 backdrop-blur-md p-4">
-          <div className="bg-white dark:bg-dark-card w-full max-w-4xl max-h-[90vh] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col border-2 border-gold/20">
-            <div className="p-6 border-b dark:border-gold/10 flex justify-between items-center bg-white dark:bg-dark-card">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-gold/10 text-gold rounded-2xl"><Settings2 size={24}/></div>
-                <div>
-                  <h3 className="text-xl font-robust text-bordeaux-950 dark:text-white uppercase italic">Configuración de Unidad</h3>
-                  <p className="text-[9px] font-black text-gold uppercase tracking-widest">Editor de Activos Maestro</p>
-                </div>
-              </div>
-              <button onClick={() => setEditingVehicle(null)} className="p-3 text-gray-400 hover:text-red-500 transition-colors"><X size={24}/></button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-8 space-y-10 scrollbar-hide">
-              <div className="space-y-6">
-                <h4 className="text-[10px] font-black text-bordeaux-800 dark:text-gold uppercase tracking-[0.4em] border-b pb-2 flex items-center gap-2"><Type size={14}/> Datos Principales</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-gray-400 uppercase ml-2">Nombre de la Unidad</label>
-                    <input type="text" value={editingVehicle.nombre} onChange={e => setEditingVehicle({...editingVehicle, nombre: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-4 text-xs font-bold outline-none" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-gray-400 uppercase ml-2">Precio Diaria (BRL)</label>
-                    <input type="number" step="0.01" value={editingVehicle.precio} onChange={e => setEditingVehicle({...editingVehicle, precio: parseFloat(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-4 text-xs font-bold outline-none" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-gray-400 uppercase ml-2">Placa de Identificación</label>
-                    <input type="text" value={editingVehicle.placa} onChange={e => setEditingVehicle({...editingVehicle, placa: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-4 text-xs font-bold outline-none" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[8px] font-black text-gray-400 uppercase ml-2">URL Imagen del Vehículo</label>
-                    <div className="relative">
-                      <ImageIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={14}/>
-                      <input type="text" value={editingVehicle.img} onChange={e => setEditingVehicle({...editingVehicle, img: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl pl-12 pr-6 py-4 text-xs font-bold outline-none" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div className="space-y-6">
-                  <h4 className="text-[10px] font-black text-bordeaux-800 dark:text-gold uppercase tracking-[0.4em] border-b pb-2 flex items-center gap-2"><CreditCard size={14}/> Finanzas y Tiempos</h4>
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1"><label className="text-[8px] font-black text-gray-400 uppercase ml-2">KM Actual</label><input type="number" value={editingVehicle.kilometrajeActual || 0} onChange={e => setEditingVehicle({...editingVehicle, kilometrajeActual: parseInt(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-4 text-xs font-bold outline-none" /></div>
-                      <div className="space-y-1"><label className="text-[8px] font-black text-gray-400 uppercase ml-2">Service (KM)</label><input type="number" value={editingVehicle.mantenimientoKM || 0} onChange={e => setEditingVehicle({...editingVehicle, mantenimientoKM: parseInt(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-4 text-xs font-bold outline-none" /></div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1"><label className="text-[8px] font-black text-gray-400 uppercase ml-2">Seguro Vence</label><input type="date" value={editingVehicle.seguroVence || ''} onChange={e => setEditingVehicle({...editingVehicle, seguroVence: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-4 text-xs font-bold outline-none" /></div>
-                      <div className="space-y-1"><label className="text-[8px] font-black text-gray-400 uppercase ml-2">Cuota Vence</label><input type="date" value={editingVehicle.vencimientoCuota || ''} onChange={e => setEditingVehicle({...editingVehicle, vencimientoCuota: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-4 text-xs font-bold outline-none" /></div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1"><label className="text-[8px] font-black text-gray-400 uppercase ml-2">Cuota Seguro ($)</label><input type="number" value={editingVehicle.cuotaSeguro || 0} onChange={e => setEditingVehicle({...editingVehicle, cuotaSeguro: parseFloat(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-4 text-xs font-bold outline-none" /></div>
-                      <div className="space-y-1"><label className="text-[8px] font-black text-gray-400 uppercase ml-2">Cuota Manto. ($)</label><input type="number" value={editingVehicle.cuotaMantenimiento || 0} onChange={e => setEditingVehicle({...editingVehicle, cuotaMantenimiento: parseFloat(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-elevated dark:text-white rounded-2xl px-6 py-4 text-xs font-bold outline-none" /></div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-6">
-                  <h4 className="text-[10px] font-black text-bordeaux-800 dark:text-gold uppercase tracking-[0.4em] border-b pb-2 flex items-center gap-2"><CheckCircle2 size={14}/> Protocolo Servicio</h4>
-                  <div className="grid grid-cols-1 gap-3">
-                    {[
-                      { key: 'aceite', label: 'Cambio de Aceite', icon: Droplets },
-                      { key: 'filtroAceite', label: 'Filtro de Aceite', icon: Filter },
-                      { key: 'filtroAire', label: 'Filtro Aire/Cabina', icon: Filter },
-                      { key: 'frenos', label: 'Pastillas Freno', icon: Disc },
-                      { key: 'alineacion', label: 'Alineación', icon: Gauge },
-                      { key: 'limpieza', label: 'Higiene Total', icon: Sparkles }
-                    ].map((item) => {
-                      const isChecked = editingVehicle.serviceChecklist?.[item.key as keyof Required<Vehicle>['serviceChecklist']];
-                      return (
-                        <button key={item.key} onClick={() => toggleChecklist(item.key as any)} className={`flex items-center justify-between p-4 rounded-2xl border transition-all duration-300 ${isChecked ? 'bg-green-500/10 border-green-500 text-green-600 shadow-sm' : 'bg-gray-50 dark:bg-dark-elevated border-gray-100 dark:border-white/5 text-gray-400'}`}>
-                          <div className="flex items-center gap-3"><item.icon size={16} /><span className="text-[10px] font-black uppercase tracking-tight">{item.label}</span></div>
-                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-colors ${isChecked ? 'bg-green-500 border-green-500 text-white' : 'border-gray-200 dark:border-white/10'}`}>{isChecked && <CheckCircle2 size={14} />}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-8 border-t dark:border-gold/10 bg-gray-50/50 dark:bg-dark-base flex gap-4">
-              <button onClick={() => handleUpdateVehicle(editingVehicle)} className="flex-1 bordeaux-gradient text-white py-5 rounded-[2rem] font-robust text-[11px] uppercase tracking-widest shadow-xl flex items-center justify-center gap-3">
-                <Save size={18}/> Guardar Cambios Técnicos
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SECCIÓN: BALANCE FINANCIERO */}
-      {activeSection === 'finanzas' && (
-        <div className="space-y-6 animate-fadeIn">
-          <div className="grid grid-cols-2 md:grid-cols-2 gap-4">
-            <div className="bg-white dark:bg-dark-card p-6 rounded-3xl border-l-8 border-l-bordeaux-800 shadow-sm"><p className="text-[8px] font-bold text-gray-400 uppercase mb-1">BRUTO TOTAL (BRL)</p><h4 className="text-2xl font-robust text-bordeaux-950 dark:text-white leading-none">R$ {stats.totalBRL.toFixed(2)}</h4></div>
-            <div className="bg-white dark:bg-dark-card p-6 rounded-3xl border-l-8 border-l-gold shadow-sm"><p className="text-[8px] font-bold text-gray-400 uppercase mb-1">BALANCE GS (DNIT)</p><h4 className="text-2xl font-robust text-gold leading-none">Gs. {(stats.totalBRL * exchangeRate).toLocaleString()}</h4></div>
-          </div>
-          <div className="bg-white dark:bg-dark-card p-6 rounded-[2.5rem] border dark:border-gold/10 h-[300px] shadow-sm">
-             <ResponsiveContainer width="100%" height="100%">
-               <BarChart data={chartData}>
-                 <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.05} />
-                 <XAxis dataKey="name" axisLine={false} tick={{ fill: '#D4AF37', fontSize: 10, fontWeight: '900' }} />
-                 <YAxis hide />
-                 <Tooltip cursor={{ fill: '#D4AF3710' }} contentStyle={{ borderRadius: '15px', backgroundColor: '#0a0101', border: '1px solid #D4AF37', color: '#fff', fontSize: '9px', fontWeight: 'bold' }} />
-                 <Bar dataKey="ingresos" fill="#800000" radius={[10, 10, 0, 0]} barSize={40} />
-               </BarChart>
-             </ResponsiveContainer>
-          </div>
+           )}
         </div>
       )}
     </div>
   );
+};
+
+// Subcomponente Formulario Inspección
+const InspectionForm: React.FC<{ vehicleId: string, flota: Vehicle[], setFlota: (f: Vehicle[]) => void, onClose: () => void }> = ({ vehicleId, flota, setFlota, onClose }) => {
+   const vehicle = flota.find(v => v.id === vehicleId);
+   const [data, setData] = useState<ChecklistLog>({
+      id: `C-${Date.now()}`,
+      tipo: 'Check-In',
+      fecha: new Date().toISOString().split('T')[0],
+      responsable: '',
+      kilometraje: vehicle?.kilometrajeActual || 0,
+      combustible: 'Full',
+      exterior: [
+         { label: 'Paragolpes Delantero', status: 'ok' },
+         { label: 'Paragolpes Trasero', status: 'ok' },
+         { label: 'Puertas Laterales', status: 'ok' },
+         { label: 'Capó y Techo', status: 'ok' },
+         { label: 'Cristales/Espejos', status: 'ok' }
+      ],
+      interior: [
+         { label: 'Tapizado', status: 'ok' },
+         { label: 'Tablero/Instrumentos', status: 'ok' },
+         { label: 'Limpieza General', status: 'ok' }
+      ],
+      mecanica: [
+         { label: 'Luces', status: 'ok' },
+         { label: 'Neumáticos', status: 'ok' },
+         { label: 'Niveles (Agua/Aceite)', status: 'ok' }
+      ],
+      documentacion: [
+         { label: 'Cédula Verde', status: 'ok' },
+         { label: 'Habilitación', status: 'ok' },
+         { label: 'Seguro al Día', status: 'ok' }
+      ],
+      observacionesGlobales: '',
+      firmado: false
+   });
+
+   const toggleItem = (category: 'exterior' | 'interior' | 'mecanica' | 'documentacion', idx: number) => {
+      const items = [...data[category]];
+      items[idx].status = items[idx].status === 'ok' ? 'bad' : 'ok';
+      setData({...data, [category]: items});
+   };
+
+   const handleSubmit = () => {
+      const updatedFlota = flota.map(v => v.id === vehicleId ? {...v, checklists: [data, ...(v.checklists || [])]} : v);
+      setFlota(updatedFlota);
+      onClose();
+   };
+
+   return (
+      <div className="space-y-6">
+         <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+               <label className="text-[9px] font-black uppercase text-gray-400">Tipo Movimiento</label>
+               <select value={data.tipo} onChange={e => setData({...data, tipo: e.target.value as any})} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-bold border-0">
+                  <option value="Check-In">Entrada (Check-In)</option>
+                  <option value="Check-Out">Salida (Check-Out)</option>
+               </select>
+            </div>
+            <div className="space-y-1">
+               <label className="text-[9px] font-black uppercase text-gray-400">Responsable</label>
+               <input type="text" value={data.responsable} onChange={e => setData({...data, responsable: e.target.value})} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-bold border-0" placeholder="Nombre..." />
+            </div>
+            <div className="space-y-1">
+               <label className="text-[9px] font-black uppercase text-gray-400">Kilometraje</label>
+               <input type="number" value={data.kilometraje} onChange={e => setData({...data, kilometraje: Number(e.target.value)})} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-bold border-0" />
+            </div>
+            <div className="space-y-1">
+               <label className="text-[9px] font-black uppercase text-gray-400">Combustible</label>
+               <select value={data.combustible} onChange={e => setData({...data, combustible: e.target.value as any})} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-bold border-0">
+                  <option value="Full">Lleno (Full)</option>
+                  <option value="3/4">3/4 Tanque</option>
+                  <option value="1/2">1/2 Tanque</option>
+                  <option value="1/4">1/4 Tanque</option>
+                  <option value="1/8">Reserva</option>
+               </select>
+            </div>
+         </div>
+
+         {/* Categorías Dinámicas */}
+         {['exterior', 'interior', 'mecanica', 'documentacion'].map((cat) => (
+            <div key={cat} className="bg-gray-50 p-4 rounded-2xl">
+               <h5 className="text-[10px] font-black uppercase text-bordeaux-800 mb-3 tracking-widest border-b border-gray-200 pb-1">{cat}</h5>
+               <div className="space-y-2">
+                  {(data[cat as keyof ChecklistLog] as InspectionItem[]).map((item, idx) => (
+                     <div key={idx} onClick={() => toggleItem(cat as any, idx)} className="flex justify-between items-center p-2 bg-white rounded-xl border border-gray-100 cursor-pointer hover:bg-gray-50">
+                        <span className="text-[10px] font-bold uppercase">{item.label}</span>
+                        <div className={`px-3 py-1 rounded-lg text-[8px] font-black uppercase transition-colors ${item.status === 'ok' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                           {item.status === 'ok' ? 'APROBADO' : 'OBSERVADO'}
+                        </div>
+                     </div>
+                  ))}
+               </div>
+            </div>
+         ))}
+
+         <div className="space-y-2">
+            <label className="text-[9px] font-black uppercase text-gray-400">Observaciones Generales</label>
+            <textarea value={data.observacionesGlobales} onChange={e => setData({...data, observacionesGlobales: e.target.value})} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-medium border-0 min-h-[80px]" placeholder="Detalles adicionales..." />
+         </div>
+
+         <button onClick={handleSubmit} className="w-full py-4 bg-bordeaux-950 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:scale-[1.02] transition-transform">
+            Guardar Inspección
+         </button>
+      </div>
+   );
 };
 
 export default AdminPanel;

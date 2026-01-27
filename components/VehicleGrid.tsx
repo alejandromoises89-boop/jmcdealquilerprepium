@@ -6,19 +6,15 @@ import VehicleCard from './VehicleCard';
 import BookingModal from './BookingModal';
 import { Car } from 'lucide-react';
 
-interface VehicleGridProps {
+const VehicleGrid: React.FC<{
   flota: Vehicle[];
   exchangeRate: number;
   reservations: Reservation[];
   onAddReservation: (res: Reservation) => void;
   language?: Language;
-}
-
-const VehicleGrid: React.FC<VehicleGridProps> = ({ flota, exchangeRate, reservations, onAddReservation, language = 'es' }) => {
+}> = ({ flota, exchangeRate, reservations, onAddReservation, language = 'es' }) => {
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [initialDates, setInitialDates] = useState<{start: Date, end: Date} | undefined>(undefined);
-
-  const t = TRANSLATIONS[language];
 
   const handleVehicleSelect = (vehicle: Vehicle, start?: Date, end?: Date) => {
     setSelectedVehicle(vehicle);
@@ -66,7 +62,6 @@ const VehicleGrid: React.FC<VehicleGridProps> = ({ flota, exchangeRate, reservat
           language={language}
           onSubmit={(res) => {
             onAddReservation(res);
-            setSelectedVehicle(null);
           }}
         />
       )}

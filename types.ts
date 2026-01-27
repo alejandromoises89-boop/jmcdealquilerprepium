@@ -1,5 +1,4 @@
 
-// Fix: Added missing User interface to support authentication components
 export interface User {
   name: string;
   email: string;
@@ -7,52 +6,72 @@ export interface User {
   isAdmin: boolean;
 }
 
+export interface InspectionItem {
+  label: string;
+  status: 'ok' | 'bad' | 'na';
+  obs?: string;
+}
+
 export interface ChecklistLog {
+  id: string;
+  tipo: 'Check-In' | 'Check-Out';
   fecha: string;
   responsable: string;
+  kilometraje: number;
   combustible: '1/8' | '1/4' | '1/2' | '3/4' | 'Full';
-  limpiezaInterior: boolean;
-  limpiezaExterior: boolean;
-  auxilio: {
-    gato: boolean;
-    llaveRueda: boolean;
-    triangulo: boolean;
-    extintor: boolean;
-    auxiliar: boolean;
-  };
-  observaciones: string;
-  firma?: string;
+  // Categorías profesionales
+  exterior: InspectionItem[];
+  interior: InspectionItem[];
+  mecanica: InspectionItem[];
+  documentacion: InspectionItem[];
+  observacionesGlobales: string;
+  firmado: boolean;
+}
+
+export interface MaintenanceRecord {
+  id: string;
+  vehicleId: string;
+  vehicleName: string;
+  fecha: string;
+  kilometraje: number;
+  descripcion: string;
+  monto: number;
+  tipo: 'Preventivo' | 'Correctivo' | 'Lavado' | 'Otro';
+  // Campos para alertas
+  vencimientoFecha?: string;
+  vencimientoKM?: number;
+  realizado: boolean;
+}
+
+export interface ExpirationRecord {
+  id: string;
+  vehicleId: string;
+  vehicleName: string;
+  tipo: 'Seguro' | 'Patente' | 'Cuota' | 'Inspección' | 'Otros';
+  vencimiento: string;
+  monto: number;
+  pagado: boolean;
+  referencia?: string;
 }
 
 export interface Vehicle {
   id: string;
   nombre: string;
-  precio: number; // in BRL
+  precio: number;
   img: string;
   estado: 'Disponible' | 'En Taller' | 'En Alquiler';
   placa: string;
   color: string;
   specs: string[];
+  kilometrajeActual: number; // Obligatorio ahora para cálculos
+  mantenimientoKM?: number;
+  checklists?: ChecklistLog[];
   transmision?: string;
   combustible?: string;
   asientos?: number;
-  tipo?: 'SUV' | 'Compacto' | 'Familiar' | 'PickUp';
-  consumo?: string;
-  mantenimientoVence?: string; 
-  mantenimientoKM?: number; 
-  seguroVence?: string;
-  cuotaSeguro?: number;
-  cuotaMantenimiento?: number;
-  vencimientoCuota?: string; 
-  kilometrajeActual?: number;
-  serviceChecklist?: {
-    aceite: boolean;
-    filtroAceite: boolean;
-    filtroAire: boolean;
-    frenos: boolean;
-    alineacion: boolean;
-    limpieza: boolean;
-  };
+  tipo?: string;
+  lastLat?: number;
+  lastLng?: number;
 }
 
 export interface Reservation {
@@ -65,15 +84,13 @@ export interface Reservation {
   auto: string;
   inicio: string;
   fin: string;
-  total: number; // in BRL
-  status: 'Requested' | 'Confirmed' | 'Completed' | 'Cancelled';
+  total: number;
+  status: 'Review' | 'Pending' | 'Confirmed' | 'Completed' | 'Cancelled';
   comprobante?: string;
   driverLicense?: string;
   signature?: string;
-  manualContract?: string; // New field for manual uploads
   includeInCalendar?: boolean;
-  deliveryLog?: ChecklistLog;
-  receptionLog?: ChecklistLog;
+  contractAccepted?: boolean;
 }
 
 export interface Gasto {
@@ -81,7 +98,8 @@ export interface Gasto {
   concepto: string;
   monto: number;
   fecha: string;
-  categoria: 'Mantenimiento' | 'Seguros' | 'Operativo' | 'Otros';
+  categoria: 'Mantenimiento' | 'Seguros' | 'Operativo' | 'Cuotas' | 'Otros';
+  vehicleId?: string; 
 }
 
 export interface Breakdown {
@@ -92,5 +110,5 @@ export interface Breakdown {
   fecha: string;
   prioridad: 'Alta' | 'Media' | 'Baja';
   resuelta: boolean;
-  evidencia?: string[];
+  evidencia: string[];
 }
