@@ -1,14 +1,16 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Vehicle, Reservation, Gasto, MaintenanceRecord, ExpirationRecord, ChecklistLog, InspectionItem } from '../types';
 import { 
   Landmark, FileText, Wrench, Search, Plus, Trash2, Printer, 
   CheckCircle2, AlertTriangle, UserPlus, Download, TrendingUp, TrendingDown,
   ArrowRight, PieChart as PieChartIcon, BarChart3, ClipboardList, 
   Car, MessageCircle, FileSpreadsheet, ShieldCheck, 
-  Edit3, X, Settings, User, CreditCard, Check, AlertCircle, Bell
+  Edit3, X, Settings, User, CreditCard, Check, AlertCircle, Bell,
+  Sparkles, Bot, Video, MapPin, Globe, Loader2, Play
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
+import { GoogleGenAI, Type } from "@google/genai";
 
 interface AdminPanelProps {
   flota: Vehicle[];
@@ -24,6 +26,14 @@ interface AdminPanelProps {
   setVencimientos: (records: ExpirationRecord[]) => void;
   exchangeRate: number;
   language?: string;
+}
+
+// --- AI & CHAT INTERFACES ---
+interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
+  sources?: { uri: string; title: string }[];
+  isError?: boolean;
 }
 
 // Subcomponente para Notificaciones Flotantes
@@ -51,13 +61,27 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   exchangeRate, gastos = [], setGastos, mantenimientos = [], setMantenimientos, 
   vencimientos = [], setVencimientos
 }) => {
-  const [activeTab, setActiveTab] = useState<'finanzas' | 'contratos' | 'taller' | 'checklists'>('finanzas');
+  const [activeTab, setActiveTab] = useState<'finanzas' | 'contratos' | 'taller' | 'checklists' | 'ai_studio'>('finanzas');
   const [finanzasFilter, setFinanzasFilter] = useState({ start: '', end: '', vehicle: '' });
   const [showManualBooking, setShowManualBooking] = useState(false);
   const [selectedContract, setSelectedContract] = useState<Reservation | null>(null);
   const [manualRes, setManualRes] = useState({ cliente: '', auto: '', inicio: '', fin: '', total: 0 });
   const [notifications, setNotifications] = useState<string[]>([]);
   const [showNewChecklist, setShowNewChecklist] = useState<string | null>(null); // vehicleId for modal
+
+  // AI STUDIO STATE
+  const [aiTab, setAiTab] = useState<'chat' | 'veo'>('chat');
+  const [chatInput, setChatInput] = useState('');
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [groundingMode, setGroundingMode] = useState<'none' | 'search' | 'maps'>('none');
+  
+  // VEO STATE
+  const [veoPrompt, setVeoPrompt] = useState('');
+  const [veoImage, setVeoImage] = useState<string | null>(null);
+  const [veoAspectRatio, setVeoAspectRatio] = useState<'16:9' | '9:16'>('16:9');
+  const [isVeoGenerating, setIsVeoGenerating] = useState(false);
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
 
   // --- LOGIC: FINANZAS ---
   const stats = useMemo(() => {
@@ -80,10 +104,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     const income = filteredRes.reduce((s, r) => s + (r.total || 0), 0);
     const expense = filteredGastos.reduce((s, g) => s + (g.monto || 0), 0) + mantenimientos.reduce((s, m) => s + m.monto, 0);
     
-    const barData = [
-      { name: 'Ingresos', val: income, fill: '#10b981' },
-      { name: 'Egresos', val: expense, fill: '#ef4444' }
-    ];
+    // Monthly data for Area Chart
+    const monthlyData = new Map();
+    filteredRes.forEach(r => {
+      const month = r.inicio.substring(0, 7); // YYYY-MM
+      if (!monthlyData.has(month)) monthlyData.set(month, { name: month, ing: 0, gas: 0 });
+      monthlyData.get(month).ing += r.total;
+    });
+    filteredGastos.forEach(g => {
+       const month = g.fecha.substring(0, 7);
+       if (!monthlyData.has(month)) monthlyData.set(month, { name: month, ing: 0, gas: 0 });
+       monthlyData.get(month).gas += g.monto;
+    });
+    const areaData = Array.from(monthlyData.values()).sort((a,b) => a.name.localeCompare(b.name));
 
     const pieData = [
       { name: 'Operativo', value: filteredGastos.filter(g => g.categoria === 'Operativo').reduce((s, g) => s + g.monto, 0) },
@@ -92,22 +125,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       { name: 'Cuotas', value: filteredGastos.filter(g => g.categoria === 'Cuotas').reduce((s, g) => s + g.monto, 0) }
     ].filter(v => v.value > 0);
 
-    return { income, expense, balance: income - expense, barData, pieData };
+    return { income, expense, balance: income - expense, areaData, pieData };
   }, [reservations, gastos, mantenimientos, finanzasFilter]);
 
-  // --- LOGIC: NOTIFICATIONS ---
+  // --- LOGIC: NOTIFICATIONS & ALERTS ---
   useEffect(() => {
     const alerts: string[] = [];
     flota.forEach(v => {
       const logs = mantenimientos.filter(m => m.vehicleId === v.id);
-      // Check last maintenance record for expiration
       const lastService = logs.sort((a,b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
       
       if (lastService) {
         if (lastService.vencimientoKM && v.kilometrajeActual >= lastService.vencimientoKM) {
-          alerts.push(`Mantenimiento Vencido (KM): ${v.nombre} superó los ${lastService.vencimientoKM} KM.`);
+          alerts.push(`${v.nombre}: Mantenimiento Vencido por KM.`);
         } else if (lastService.vencimientoKM && (lastService.vencimientoKM - v.kilometrajeActual <= 500)) {
-           alerts.push(`Mantenimiento Próximo (KM): ${v.nombre} a ${lastService.vencimientoKM - v.kilometrajeActual} KM.`);
+           alerts.push(`${v.nombre}: Mantenimiento Próximo (${lastService.vencimientoKM - v.kilometrajeActual} KM).`);
         }
 
         if (lastService.vencimientoFecha) {
@@ -116,9 +148,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           const diffTime = dueDate.getTime() - today.getTime();
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
           if (diffDays <= 0) {
-            alerts.push(`Mantenimiento Vencido (Fecha): ${v.nombre} venció el ${lastService.vencimientoFecha}.`);
+            alerts.push(`${v.nombre}: Mantenimiento Vencido por Fecha.`);
           } else if (diffDays <= 7) {
-            alerts.push(`Mantenimiento Próximo (Fecha): ${v.nombre} vence en ${diffDays} días.`);
+            alerts.push(`${v.nombre}: Vence en ${diffDays} días.`);
           }
         }
       }
@@ -126,15 +158,126 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     setNotifications(alerts);
   }, [flota, mantenimientos]);
 
-  const exportCSV = (type: string) => {
-    let headers = "ID,Cliente,Auto,Fecha,Total BRL\n";
-    let rows = reservations.map(r => `${r.id},${r.cliente},${r.auto},${r.inicio},${r.total}`).join("\n");
-    const blob = new Blob([headers + rows], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `JM_${type}_${Date.now()}.csv`;
-    link.click();
+  // --- LOGIC: AI HANDLERS ---
+  const handleSendMessage = async () => {
+    if (!chatInput.trim()) return;
+    const userMsg = chatInput;
+    setChatInput('');
+    setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    setIsChatLoading(true);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      let modelName = 'gemini-3-pro-preview';
+      let tools: any[] = [];
+      
+      // Determine model based on grounding
+      if (groundingMode === 'search') {
+        modelName = 'gemini-3-flash-preview';
+        tools = [{ googleSearch: {} }];
+      } else if (groundingMode === 'maps') {
+        modelName = 'gemini-2.5-flash';
+        tools = [{ googleMaps: {} }];
+      }
+
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: userMsg,
+        config: {
+          tools: tools.length > 0 ? tools : undefined,
+          systemInstruction: "You are an AI assistant for 'JM Alquiler de Vehículos', a premium car rental agency in Paraguay. Answer professionally.",
+        }
+      });
+
+      let responseText = response.text || "No response text.";
+      let sources: { uri: string; title: string }[] = [];
+
+      // Extract Grounding Metadata
+      if (groundingMode === 'search') {
+        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+        if (chunks) {
+          chunks.forEach((c: any) => {
+            if (c.web?.uri) sources.push({ uri: c.web.uri, title: c.web.title || 'Source' });
+          });
+        }
+      } else if (groundingMode === 'maps') {
+        // Maps logic if needed for extracting snippets
+        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+         if (chunks) {
+          chunks.forEach((c: any) => {
+             // Extract relevant map links if available
+             if(c.web?.uri) sources.push({ uri: c.web.uri, title: "Google Maps Result"});
+          });
+        }
+      }
+
+      setChatMessages(prev => [...prev, { role: 'model', text: responseText, sources }]);
+
+    } catch (error) {
+      console.error(error);
+      setChatMessages(prev => [...prev, { role: 'model', text: "Error connecting to Gemini Intelligence.", isError: true }]);
+    } finally {
+      setIsChatLoading(false);
+    }
   };
+
+  const handleGenerateVideo = async () => {
+    if (!veoImage) {
+      alert("Please upload an image first.");
+      return;
+    }
+    setIsVeoGenerating(true);
+    setGeneratedVideoUrl(null);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      
+      // Remove data URL prefix for API
+      const base64Image = veoImage.split(',')[1];
+      
+      let operation = await ai.models.generateVideos({
+        model: 'veo-3.1-fast-generate-preview',
+        prompt: veoPrompt || "Animate this car driving in a futuristic city",
+        image: {
+           imageBytes: base64Image,
+           mimeType: 'image/png' 
+        },
+        config: {
+          numberOfVideos: 1,
+          aspectRatio: veoAspectRatio,
+          resolution: '720p'
+        }
+      });
+
+      // Polling loop
+      while (!operation.done) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        operation = await ai.operations.getVideosOperation({ operation: operation });
+      }
+
+      const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
+      if (videoUri) {
+        // Fetch actual bytes via proxy or signed link logic (simulated here since we need key)
+        const finalUrl = `${videoUri}&key=${process.env.API_KEY}`;
+        setGeneratedVideoUrl(finalUrl);
+      }
+
+    } catch (error) {
+      console.error(error);
+      alert("Error generating video: " + error);
+    } finally {
+      setIsVeoGenerating(false);
+    }
+  };
+
+  const handleVeoImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setVeoImage(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
 
   const COLORS = ['#800000', '#D4AF37', '#10b981', '#3b82f6'];
 
@@ -145,7 +288,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* HEADER */}
       <div className="px-4 flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-robust text-bordeaux-950 dark:text-white italic tracking-tighter leading-none">TERMINAL MASTER v3.6</h2>
+          <h2 className="text-3xl font-robust text-bordeaux-950 dark:text-white italic tracking-tighter leading-none">TERMINAL MASTER v3.7</h2>
           <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em] mt-2 flex items-center gap-2">
             <ShieldCheck size={14}/> Centro de Inteligencia Operativa
           </p>
@@ -163,8 +306,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         {[
           {id:'finanzas', icon: Landmark, label: 'Finanzas'},
           {id:'contratos', icon: FileText, label: 'Contratos'},
-          {id:'taller', icon: Wrench, label: 'Taller & Alertas'},
-          {id:'checklists', icon: ClipboardList, label: 'Inspección Pro'}
+          {id:'taller', icon: Wrench, label: 'Taller'},
+          {id:'checklists', icon: ClipboardList, label: 'Inspección'},
+          {id:'ai_studio', icon: Sparkles, label: 'AI Studio'}
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} 
             className={`flex flex-col items-center justify-center gap-1.5 min-w-[100px] py-5 rounded-[2.2rem] transition-all ${
@@ -176,44 +320,71 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         ))}
       </div>
 
-      {/* --- FINANZAS --- */}
+      {/* --- FINANZAS (ENHANCED) --- */}
       {activeTab === 'finanzas' && (
-        <div className="space-y-6 animate-fadeIn px-2">
+        <div className="space-y-8 animate-fadeIn px-2">
+          {/* Executive Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-             <div className="bg-white dark:bg-dark-card p-8 rounded-[3rem] border-b-8 border-emerald-500 shadow-xl">
-                <p className="text-[9px] font-black text-emerald-600 uppercase mb-2">Ingresos</p>
+             <div className="bg-gradient-to-br from-white to-gray-50 dark:from-dark-card dark:to-dark-elevated p-8 rounded-[3rem] border-l-8 border-emerald-500 shadow-xl group hover:shadow-2xl transition-all">
+                <div className="flex justify-between items-start mb-4">
+                   <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 rounded-2xl"><TrendingUp size={24}/></div>
+                   <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Este Periodo</span>
+                </div>
+                <p className="text-[9px] font-black text-emerald-600 uppercase mb-2">Ingresos Totales</p>
                 <h3 className="text-4xl font-robust dark:text-white italic">R$ {stats.income.toLocaleString()}</h3>
-                <p className="text-[11px] font-bold text-gray-400 mt-2 italic">Gs. {(stats.income * exchangeRate).toLocaleString()}</p>
+                <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 italic border-t border-gray-100 dark:border-white/5 pt-2">Gs. {(stats.income * exchangeRate).toLocaleString()}</p>
              </div>
-             <div className="bg-white dark:bg-dark-card p-8 rounded-[3rem] border-b-8 border-rose-500 shadow-xl">
-                <p className="text-[9px] font-black text-rose-600 uppercase mb-2">Egresos</p>
+             
+             <div className="bg-gradient-to-br from-white to-gray-50 dark:from-dark-card dark:to-dark-elevated p-8 rounded-[3rem] border-l-8 border-rose-500 shadow-xl group hover:shadow-2xl transition-all">
+                 <div className="flex justify-between items-start mb-4">
+                   <div className="p-3 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded-2xl"><TrendingDown size={24}/></div>
+                   <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Gastos Operativos</span>
+                </div>
+                <p className="text-[9px] font-black text-rose-600 uppercase mb-2">Egresos Totales</p>
                 <h3 className="text-4xl font-robust dark:text-white italic">R$ {stats.expense.toLocaleString()}</h3>
-                <p className="text-[11px] font-bold text-gray-400 mt-2 italic">Gs. {(stats.expense * exchangeRate).toLocaleString()}</p>
+                <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 italic border-t border-gray-100 dark:border-white/5 pt-2">Gs. {(stats.expense * exchangeRate).toLocaleString()}</p>
              </div>
-             <div className="bg-bordeaux-950 p-8 rounded-[3rem] border-2 border-gold/20 shadow-xl">
-                <p className="text-[9px] font-black text-gold uppercase mb-2">Neto</p>
-                <h3 className="text-4xl font-robust text-white italic">R$ {stats.balance.toLocaleString()}</h3>
-                <p className="text-[11px] font-bold text-gold/40 mt-2 italic">Gs. {(stats.balance * exchangeRate).toLocaleString()}</p>
+
+             <div className="bg-gradient-to-br from-bordeaux-950 to-bordeaux-900 p-8 rounded-[3rem] border-2 border-gold/20 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-10 opacity-10"><Landmark size={100} className="text-gold"/></div>
+                <p className="text-[9px] font-black text-gold uppercase mb-2">Balance Neto</p>
+                <h3 className="text-5xl font-robust text-white italic mt-4">R$ {stats.balance.toLocaleString()}</h3>
+                <p className="text-sm font-bold text-gold/60 mt-2 italic">Gs. {(stats.balance * exchangeRate).toLocaleString()}</p>
              </div>
           </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-             <div className="bg-white dark:bg-dark-card p-10 rounded-[3.5rem] shadow-xl h-[350px]">
-                <ResponsiveContainer width="100%" height="100%">
-                   <BarChart data={stats.barData}>
+             <div className="bg-white dark:bg-dark-card p-10 rounded-[3.5rem] shadow-xl h-[400px] border dark:border-white/5">
+                <h4 className="text-[10px] font-black uppercase text-gray-400 mb-6 flex items-center gap-2"><BarChart3 size={16}/> Flujo de Caja (Tendencia)</h4>
+                <ResponsiveContainer width="100%" height="90%">
+                   <AreaChart data={stats.areaData}>
+                      <defs>
+                        <linearGradient id="colorIng" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="colorGas" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#ef4444" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
                       <XAxis dataKey="name" axisLine={false} tick={{fontSize: 10, fontWeight: 900}} />
-                      <Tooltip />
-                      <Bar dataKey="val" radius={[15, 15, 0, 0]} />
-                   </BarChart>
+                      <Tooltip contentStyle={{borderRadius: '16px', border:'none', boxShadow:'0 10px 30px rgba(0,0,0,0.1)'}} />
+                      <Area type="monotone" dataKey="ing" stroke="#10b981" fillOpacity={1} fill="url(#colorIng)" />
+                      <Area type="monotone" dataKey="gas" stroke="#ef4444" fillOpacity={1} fill="url(#colorGas)" />
+                   </AreaChart>
                 </ResponsiveContainer>
              </div>
-             <div className="bg-white dark:bg-dark-card p-10 rounded-[3.5rem] shadow-xl h-[350px]">
-                <ResponsiveContainer width="100%" height="100%">
+             <div className="bg-white dark:bg-dark-card p-10 rounded-[3.5rem] shadow-xl h-[400px] border dark:border-white/5">
+                <h4 className="text-[10px] font-black uppercase text-gray-400 mb-6 flex items-center gap-2"><PieChartIcon size={16}/> Distribución de Costos</h4>
+                <ResponsiveContainer width="100%" height="90%">
                    <PieChart>
-                      <Pie data={stats.pieData} innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value">
+                      <Pie data={stats.pieData} innerRadius={80} outerRadius={110} paddingAngle={5} dataKey="value">
                          {stats.pieData.map((_, i) => <Cell key={`c-${i}`} fill={COLORS[i % COLORS.length]} />)}
                       </Pie>
                       <Tooltip />
+                      <Legend verticalAlign="bottom" height={36}/>
                    </PieChart>
                 </ResponsiveContainer>
              </div>
@@ -274,40 +445,63 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      {/* --- TALLER (MEJORADO CON ALERTAS INTEGRADAS) --- */}
+      {/* --- TALLER PROFESSIONAL (WITH INTEGRATED ALERTS) --- */}
       {activeTab === 'taller' && (
         <div className="space-y-8 px-2 animate-fadeIn">
            {flota.map(v => {
              const logs = mantenimientos.filter(m => m.vehicleId === v.id);
              // Verificar estado de alerta para este vehículo
              const lastService = logs.sort((a,b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+             
              let alertStatus = 'OK';
+             let alertMsg = 'Estado Óptimo';
+             let daysLeft = 99;
+             let kmLeft = 99999;
+
              if (lastService) {
-                if ((lastService.vencimientoKM && v.kilometrajeActual >= lastService.vencimientoKM) || (lastService.vencimientoFecha && new Date() >= new Date(lastService.vencimientoFecha))) {
-                   alertStatus = 'VENCIDO';
-                } else if ((lastService.vencimientoKM && lastService.vencimientoKM - v.kilometrajeActual <= 500)) {
-                   alertStatus = 'PROXIMO';
+                if (lastService.vencimientoKM) kmLeft = lastService.vencimientoKM - v.kilometrajeActual;
+                if (lastService.vencimientoFecha) {
+                   daysLeft = Math.ceil((new Date(lastService.vencimientoFecha).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                }
+
+                if (kmLeft <= 0 || daysLeft <= 0) {
+                   alertStatus = 'CRITICAL';
+                   alertMsg = 'MANTENIMIENTO VENCIDO';
+                } else if (kmLeft <= 500 || daysLeft <= 15) {
+                   alertStatus = 'WARNING';
+                   alertMsg = 'MANTENIMIENTO PRÓXIMO';
                 }
              }
 
              return (
-               <div key={v.id} className={`bg-white dark:bg-dark-card p-8 rounded-[3.5rem] border-2 shadow-xl space-y-6 relative overflow-hidden transition-all ${alertStatus === 'VENCIDO' ? 'border-red-500 shadow-red-500/20' : alertStatus === 'PROXIMO' ? 'border-gold shadow-gold/20' : 'border-gray-100 dark:border-white/5'}`}>
-                  {/* Etiqueta de Alerta */}
-                  {alertStatus !== 'OK' && (
-                    <div className={`absolute top-0 right-0 px-8 py-3 rounded-bl-[2.5rem] font-black text-[10px] uppercase tracking-widest text-white ${alertStatus === 'VENCIDO' ? 'bg-red-500' : 'bg-gold'}`}>
-                       {alertStatus === 'VENCIDO' ? 'MANTENIMIENTO VENCIDO' : 'MANTENIMIENTO PRÓXIMO'}
-                    </div>
-                  )}
+               <div key={v.id} className={`bg-white dark:bg-dark-card p-8 rounded-[3.5rem] border-2 shadow-xl space-y-6 relative overflow-hidden transition-all group ${
+                 alertStatus === 'CRITICAL' ? 'border-red-500 shadow-red-500/10' : 
+                 alertStatus === 'WARNING' ? 'border-gold shadow-gold/10' : 'border-gray-100 dark:border-white/5'
+               }`}>
+                  
+                  {/* Status Indicator Stripe */}
+                  <div className={`absolute top-0 left-0 right-0 h-2 ${
+                     alertStatus === 'CRITICAL' ? 'bg-red-500' : alertStatus === 'WARNING' ? 'bg-gold' : 'bg-emerald-500'
+                  }`}></div>
 
                   <div className="flex flex-col md:flex-row items-center gap-8 border-b dark:border-white/5 pb-6">
                      <div className="w-full md:w-48 h-32 rounded-3xl overflow-hidden bg-gray-50 border border-gray-100 relative group">
                         <img src={v.img} className="w-full h-full object-contain p-2 transition-transform group-hover:scale-110"/>
                      </div>
-                     <div className="flex-1 text-center md:text-left space-y-2">
-                        <h4 className="text-2xl font-robust dark:text-white uppercase italic">{v.nombre}</h4>
+                     <div className="flex-1 text-center md:text-left space-y-3">
+                        <div>
+                           <h4 className="text-2xl font-robust dark:text-white uppercase italic">{v.nombre}</h4>
+                           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{v.placa}</p>
+                        </div>
                         <div className="flex flex-wrap justify-center md:justify-start gap-3">
-                           <span className="bg-gray-100 dark:bg-dark-elevated px-3 py-1 rounded-lg text-[9px] font-black text-gray-500 uppercase">Placa: {v.placa}</span>
-                           <span className="bg-gray-100 dark:bg-dark-elevated px-3 py-1 rounded-lg text-[9px] font-black text-bordeaux-800 uppercase">KM Actual: {v.kilometrajeActual}</span>
+                           <div className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest text-white ${
+                              alertStatus === 'CRITICAL' ? 'bg-red-500' : alertStatus === 'WARNING' ? 'bg-gold' : 'bg-emerald-500'
+                           }`}>
+                              {alertMsg}
+                           </div>
+                           <div className="px-4 py-2 bg-gray-100 dark:bg-dark-elevated rounded-xl text-[9px] font-black text-bordeaux-800 uppercase tracking-widest">
+                              KM Actual: {v.kilometrajeActual}
+                           </div>
                         </div>
                      </div>
                      <button onClick={() => {
@@ -331,27 +525,27 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
 
                   <div className="space-y-4">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-2">Historial Técnico & Vencimientos</p>
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Wrench size={12}/> Historial Técnico</p>
                     {logs.map(log => (
                       <div key={log.id} className="bg-gray-50 dark:bg-dark-base p-6 rounded-[2.5rem] border border-gray-200 dark:border-white/5 space-y-4 hover:border-gold/30 transition-all">
                          <div className="flex flex-col md:flex-row gap-4">
                             <div className="flex-1 space-y-2">
-                               <p className="text-[8px] font-black text-gray-400 uppercase">Descripción del Trabajo</p>
+                               <p className="text-[8px] font-black text-gray-400 uppercase">Descripción</p>
                                <input type="text" value={log.descripcion} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, descripcion: e.target.value} : m))} className="w-full bg-transparent border-b border-gray-300 text-sm font-bold dark:text-white outline-none focus:border-gold" />
                             </div>
                             <div className="w-full md:w-32 space-y-2">
-                               <p className="text-[8px] font-black text-gray-400 uppercase">Monto BRL</p>
+                               <p className="text-[8px] font-black text-gray-400 uppercase">Costo (BRL)</p>
                                <input type="number" value={log.monto} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, monto: Number(e.target.value)} : m))} className="w-full bg-transparent border-b border-gray-300 text-sm font-black text-bordeaux-800 text-right outline-none focus:border-gold" />
                             </div>
                          </div>
                          
                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white dark:bg-dark-elevated p-4 rounded-2xl border border-gray-100 dark:border-white/5">
                             <div className="space-y-1">
-                               <p className="text-[7px] font-black text-gray-400 uppercase">Fecha Realizado</p>
+                               <p className="text-[7px] font-black text-gray-400 uppercase">Realizado (Fecha)</p>
                                <input type="date" value={log.fecha} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, fecha: e.target.value} : m))} className="bg-transparent text-[10px] font-bold w-full" />
                             </div>
                             <div className="space-y-1">
-                               <p className="text-[7px] font-black text-gray-400 uppercase">KM Realizado</p>
+                               <p className="text-[7px] font-black text-gray-400 uppercase">Realizado (KM)</p>
                                <input type="number" value={log.kilometraje} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, kilometraje: Number(e.target.value)} : m))} className="bg-transparent text-[10px] font-bold w-full" />
                             </div>
                             <div className="space-y-1">
@@ -442,6 +636,133 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
              </div>
            )}
+        </div>
+      )}
+
+      {/* --- AI STUDIO (GEMINI 3 PRO / VEO 3.1) --- */}
+      {activeTab === 'ai_studio' && (
+        <div className="space-y-6 animate-fadeIn px-2 h-[600px] flex flex-col">
+           {/* Sub-Navigation for AI */}
+           <div className="flex justify-center gap-4 mb-4">
+              <button onClick={() => setAiTab('chat')} className={`px-6 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all ${aiTab === 'chat' ? 'bg-bordeaux-950 text-white shadow-lg' : 'bg-white text-gray-400'}`}>
+                 <Bot size={14} className="inline mr-2"/> Asistente JM
+              </button>
+              <button onClick={() => setAiTab('veo')} className={`px-6 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all ${aiTab === 'veo' ? 'bg-bordeaux-950 text-white shadow-lg' : 'bg-white text-gray-400'}`}>
+                 <Video size={14} className="inline mr-2"/> Veo Studio
+              </button>
+           </div>
+
+           <div className="flex-1 bg-white dark:bg-dark-card rounded-[3rem] border border-gold/10 shadow-2xl overflow-hidden relative">
+              {/* CHAT INTERFACE */}
+              {aiTab === 'chat' && (
+                <div className="h-full flex flex-col">
+                   {/* Tool Toggles */}
+                   <div className="p-4 bg-gray-50/50 dark:bg-dark-elevated border-b dark:border-white/5 flex justify-center gap-3">
+                      <button onClick={() => setGroundingMode(groundingMode === 'search' ? 'none' : 'search')} className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase border flex items-center gap-2 transition-all ${groundingMode === 'search' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-white text-gray-400 border-gray-100'}`}>
+                         <Globe size={12}/> Google Search
+                      </button>
+                      <button onClick={() => setGroundingMode(groundingMode === 'maps' ? 'none' : 'maps')} className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase border flex items-center gap-2 transition-all ${groundingMode === 'maps' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-white text-gray-400 border-gray-100'}`}>
+                         <MapPin size={12}/> Google Maps
+                      </button>
+                   </div>
+
+                   {/* Messages Area */}
+                   <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                      {chatMessages.map((msg, idx) => (
+                         <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-bordeaux-950 text-white rounded-tr-none' : 'bg-gray-100 dark:bg-dark-elevated dark:text-gray-200 rounded-tl-none'}`}>
+                               <p>{msg.text}</p>
+                               {msg.sources && msg.sources.length > 0 && (
+                                  <div className="mt-3 pt-2 border-t border-gray-200/20">
+                                     <p className="text-[8px] font-black opacity-50 uppercase mb-1">Fuentes:</p>
+                                     {msg.sources.map((src, i) => (
+                                        <a key={i} href={src.uri} target="_blank" className="block text-[9px] text-blue-400 hover:underline truncate">{src.title}</a>
+                                     ))}
+                                  </div>
+                               )}
+                            </div>
+                         </div>
+                      ))}
+                      {isChatLoading && (
+                         <div className="flex justify-start">
+                            <div className="bg-gray-100 p-4 rounded-2xl rounded-tl-none"><Loader2 className="animate-spin text-gray-400" size={16}/></div>
+                         </div>
+                      )}
+                   </div>
+
+                   {/* Input Area */}
+                   <div className="p-4 bg-white dark:bg-dark-card border-t dark:border-white/5 flex gap-3">
+                      <input 
+                         value={chatInput}
+                         onChange={e => setChatInput(e.target.value)}
+                         onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
+                         placeholder="Pregunte a Gemini 3 Pro (ej: Estrategias de precios, buscar noticias...)"
+                         className="flex-1 bg-gray-50 dark:bg-dark-elevated rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-gold"
+                      />
+                      <button onClick={handleSendMessage} className="p-3 bg-bordeaux-950 text-white rounded-2xl hover:scale-105 transition-transform"><ArrowRight size={20}/></button>
+                   </div>
+                </div>
+              )}
+
+              {/* VEO STUDIO INTERFACE */}
+              {aiTab === 'veo' && (
+                <div className="h-full flex flex-col p-8 overflow-y-auto">
+                   <div className="flex flex-col md:flex-row gap-8 h-full">
+                      <div className="flex-1 space-y-6">
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black uppercase text-gray-400 ml-2">1. Imagen de Referencia</label>
+                            <label className="w-full h-40 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors overflow-hidden relative">
+                               <input type="file" accept="image/*" onChange={handleVeoImageUpload} className="hidden" />
+                               {veoImage ? (
+                                  <img src={veoImage} className="w-full h-full object-cover" />
+                               ) : (
+                                  <>
+                                     <Plus size={24} className="text-gray-300 mb-2"/>
+                                     <span className="text-[8px] font-black uppercase text-gray-300">Subir Imagen</span>
+                                  </>
+                               )}
+                            </label>
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black uppercase text-gray-400 ml-2">2. Instrucción (Prompt)</label>
+                            <textarea 
+                               value={veoPrompt} 
+                               onChange={e => setVeoPrompt(e.target.value)}
+                               placeholder="Ej: Animar el coche conduciendo por una carretera costera..."
+                               className="w-full h-32 bg-gray-50 dark:bg-dark-elevated rounded-2xl p-4 text-sm resize-none outline-none focus:ring-2 focus:ring-gold"
+                            />
+                         </div>
+                         <div className="flex gap-4">
+                            <select value={veoAspectRatio} onChange={e => setVeoAspectRatio(e.target.value as any)} className="bg-gray-50 dark:bg-dark-elevated px-4 py-3 rounded-2xl text-xs font-bold border-0">
+                               <option value="16:9">Horizontal (16:9)</option>
+                               <option value="9:16">Vertical (9:16)</option>
+                            </select>
+                            <button onClick={handleGenerateVideo} disabled={isVeoGenerating || !veoImage} className="flex-1 bordeaux-gradient text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:scale-[1.02] disabled:opacity-50 transition-all">
+                               {isVeoGenerating ? <Loader2 className="animate-spin" size={16}/> : <Play size={16}/>} Generar Video (Veo)
+                            </button>
+                         </div>
+                      </div>
+                      
+                      <div className="flex-1 bg-black rounded-3xl flex items-center justify-center relative overflow-hidden">
+                         {generatedVideoUrl ? (
+                            <video src={generatedVideoUrl} controls autoPlay loop className="w-full h-full object-contain" />
+                         ) : (
+                            <div className="text-center opacity-30">
+                               <Video size={48} className="mx-auto text-white mb-2"/>
+                               <p className="text-[9px] font-black text-white uppercase">Vista Previa</p>
+                            </div>
+                         )}
+                         {isVeoGenerating && (
+                            <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-white z-10">
+                               <Loader2 size={40} className="animate-spin mb-4 text-gold"/>
+                               <p className="text-[10px] font-black uppercase tracking-widest">Generando con Veo 3.1...</p>
+                            </div>
+                         )}
+                      </div>
+                   </div>
+                </div>
+              )}
+           </div>
         </div>
       )}
     </div>
