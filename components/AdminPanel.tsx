@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Vehicle, Reservation, Gasto, MaintenanceRecord, ExpirationRecord, ChecklistLog, InspectionItem } from '../types';
 import { 
@@ -9,10 +8,11 @@ import {
   Edit3, X, Settings, User, CreditCard, Check, AlertCircle, Bell,
   Sparkles, Bot, Video, MapPin, Globe, Loader2, Play, Image as ImageIcon,
   Fuel, Gauge, Users, Zap, RefreshCw, HandCoins, Repeat, Calculator, PenTool,
-  CalendarClock, Timer, HardDrive
+  CalendarClock, Timer, HardDrive, Save, FileSignature, Camera, Upload, Coins
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
+import ContractDocument from './ContractDocument';
 
 interface AdminPanelProps {
   flota: Vehicle[];
@@ -76,6 +76,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [notifications, setNotifications] = useState<string[]>([]);
   const [showNewChecklist, setShowNewChecklist] = useState<string | null>(null);
   
+  // Contract Viewer Modal
+  const [viewingContract, setViewingContract] = useState<Reservation | null>(null);
+
   // Taller collapsible state
   const [expandedMaintenance, setExpandedMaintenance] = useState<Record<string, boolean>>({});
 
@@ -246,6 +249,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  const handleMaintenancePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, maintenanceId: string) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setMantenimientos(mantenimientos.map(m => 
+          m.id === maintenanceId 
+            ? { ...m, images: [...(m.images || []), reader.result as string] }
+            : m
+        ));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // --- LOGIC: FINANZAS ---
   const stats = useMemo(() => {
     const filteredRes = reservations.filter(r => {
@@ -297,31 +315,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   useEffect(() => {
     const alerts: string[] = [];
     flota.forEach(v => {
-      const logs = mantenimientos.filter(m => m.vehicleId === v.id);
-      const lastService = logs.sort((a,b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
-      
-      if (lastService) {
-        if (lastService.vencimientoKM && v.kilometrajeActual >= lastService.vencimientoKM) {
-          alerts.push(`${v.nombre}: Mantenimiento Vencido por KM.`);
-        } else if (lastService.vencimientoKM && (lastService.vencimientoKM - v.kilometrajeActual <= 500)) {
-           alerts.push(`${v.nombre}: Mantenimiento Próximo (${lastService.vencimientoKM - v.kilometrajeActual} KM).`);
-        }
-
-        if (lastService.vencimientoFecha) {
-          const today = new Date();
-          const dueDate = new Date(lastService.vencimientoFecha);
-          const diffTime = dueDate.getTime() - today.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-          if (diffDays <= 0) {
-            alerts.push(`${v.nombre}: Mantenimiento Vencido por Fecha.`);
-          } else if (diffDays <= 7) {
-            alerts.push(`${v.nombre}: Vence en ${diffDays} días.`);
-          }
-        }
+      // Mantenimiento Alerts
+      if (v.maintenanceStatus === 'critical') {
+         alerts.push(`${v.nombre}: MANTENIMIENTO VENCIDO`);
+      } else if (v.maintenanceStatus === 'warning') {
+         alerts.push(`${v.nombre}: Mantenimiento Próximo`);
       }
     });
+    // Vencimientos Alerts
+    vencimientos.forEach(v => {
+       if (!v.pagado) {
+          const due = new Date(v.vencimiento);
+          const diff = (due.getTime() - new Date().getTime()) / (1000 * 3600 * 24);
+          if (diff <= 3) alerts.push(`${v.tipo} ${v.vehicleName}: Vence en ${Math.ceil(diff)} días.`);
+       }
+    });
     setNotifications(alerts);
-  }, [flota, mantenimientos]);
+  }, [flota, vencimientos]);
 
   // --- LOGIC: AI HANDLERS ---
   const handleSendMessage = async () => {
@@ -542,17 +552,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       </div>
 
       {/* STATUS BAR FOR DATA SAVING VISIBILITY */}
-      <div className="mx-4 px-6 py-3 bg-gray-100 dark:bg-dark-elevated rounded-2xl flex items-center justify-between border border-gray-200 dark:border-white/5 shadow-inner">
-         <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-gold animate-pulse' : 'bg-green-500'}`}></div>
+      <div className="mx-4 px-6 py-3 bg-gray-100 dark:bg-dark-elevated rounded-2xl flex items-center justify-between border border-gray-200 dark:border-white/5 shadow-inner transition-all">
+         <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full shadow-sm transition-colors duration-500 ${isSyncing ? 'bg-gold animate-pulse' : 'bg-green-500'}`}></div>
             <span className="text-[9px] font-black uppercase text-gray-500 tracking-widest flex items-center gap-2">
-               <HardDrive size={10}/>
-               {isSyncing ? 'Sincronizando con Google Sheets...' : 'Datos Guardados (Local Storage Seguro)'}
+               <HardDrive size={12}/>
+               {isSyncing ? 'Sincronizando con Nube...' : 'Datos Guardados (Memoria Local Segura)'}
             </span>
          </div>
-         <div className="flex items-center gap-2 text-[8px] font-bold text-gray-400 uppercase">
-            <span className="hidden md:inline">Última act: {new Date().toLocaleTimeString()}</span>
-            {isSyncing && <RefreshCw size={10} className="animate-spin"/>}
+         <div className="flex items-center gap-3 text-[8px] font-bold text-gray-400 uppercase">
+            <span className="hidden md:inline bg-white dark:bg-white/10 px-2 py-1 rounded-lg">Última act: {new Date().toLocaleTimeString()}</span>
+            {isSyncing ? <RefreshCw size={12} className="animate-spin text-gold"/> : <Save size={12} className="text-green-500"/>}
          </div>
       </div>
 
@@ -707,14 +717,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                        <p className="text-lg font-robust dark:text-white">R$ {r.total}</p>
                        <span className={`px-3 py-0.5 rounded-full text-[7px] font-black uppercase ${r.status === 'Confirmed' ? 'bg-green-100 text-green-700' : r.status === 'Cancelled' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>{r.status}</span>
                      </div>
-                     {/* Manual Verification Button */}
+                     {/* Botón Ver Contrato */}
+                     {(r.signature || r.status === 'Confirmed') && (
+                        <button 
+                           onClick={(e) => { e.stopPropagation(); setViewingContract(r); }}
+                           className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors"
+                           title="Ver Contrato"
+                        >
+                           <FileSignature size={16}/>
+                        </button>
+                     )}
+                     {/* Manual Verification Button - Updated Label */}
                      {r.status !== 'Confirmed' && r.status !== 'Completed' && r.status !== 'Cancelled' && (
                         <button 
                             onClick={(e) => { e.stopPropagation(); handleVerifyPayment(r.id); }} 
-                            className="p-3 bg-green-50 text-green-600 hover:bg-green-100 rounded-xl transition-colors"
+                            className="p-3 bg-green-50 text-green-600 hover:bg-green-100 rounded-xl transition-colors flex items-center gap-2"
                             title="Validar Pago Manualmente"
                         >
-                            <CheckCircle2 size={16}/>
+                            <CheckCircle2 size={16}/> <span className="text-[8px] font-black uppercase hidden md:inline">Validar Pago</span>
                         </button>
                      )}
                      <button onClick={(e) => { e.stopPropagation(); setManagingRes(r); }} className="p-3 text-gray-300 hover:text-bordeaux-800 transition-colors"><Settings size={16}/></button>
@@ -846,10 +866,43 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
              </div>
            )}
+
+           {/* --- MODAL VER CONTRATO --- */}
+           {viewingContract && (
+              <div className="fixed inset-0 z-[250] flex items-center justify-center bg-dark-base/90 backdrop-blur-sm p-4 animate-fadeIn">
+                 <div className="relative bg-transparent w-full max-w-5xl h-[90vh] overflow-y-auto">
+                    <button 
+                       onClick={() => setViewingContract(null)} 
+                       className="absolute top-4 right-4 z-50 p-4 bg-white text-black rounded-full shadow-xl hover:bg-red-500 hover:text-white transition-all"
+                    >
+                       <X size={24}/>
+                    </button>
+                    {/* Renderizamos el componente de contrato directamente */}
+                    {(() => {
+                       const v = flota.find(f => f.nombre === viewingContract.auto) || flota[0];
+                       // Calculamos días
+                       const start = parseDate(viewingContract.inicio);
+                       const end = parseDate(viewingContract.fin);
+                       const diffTime = Math.abs(end.getTime() - start.getTime());
+                       const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+                       
+                       return (
+                          <ContractDocument 
+                             vehicle={v}
+                             data={viewingContract}
+                             days={days}
+                             totalPYG={viewingContract.total * exchangeRate}
+                             signature={viewingContract.signature}
+                          />
+                       );
+                    })()}
+                 </div>
+              </div>
+           )}
         </div>
       )}
 
-      {/* --- VENCIMIENTOS TAB --- */}
+      {/* --- VENCIMIENTOS TAB (ALERTS REFINED & PAYMENTS) --- */}
       {activeTab === 'vencimientos' && (
         <div className="space-y-6 animate-fadeIn px-2">
            <div className="bg-white dark:bg-dark-card p-6 rounded-[3rem] border-2 border-gold/10 shadow-xl space-y-4">
@@ -862,7 +915,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                  <select value={newExpiration.tipo} onChange={e => setNewExpiration({...newExpiration, tipo: e.target.value as any})} className="bg-gray-50 dark:bg-dark-base rounded-xl px-4 py-3 text-xs font-bold">
                     <option value="Seguro">Seguro</option>
                     <option value="Patente">Patente</option>
-                    <option value="Cuota">Cuota</option>
+                    <option value="Cuota">Cuota Financiación</option>
                     <option value="Inspección">Inspección</option>
                  </select>
                  <input type="date" value={newExpiration.vencimiento} onChange={e => setNewExpiration({...newExpiration, vencimiento: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-xl px-4 py-3 text-xs font-bold" />
@@ -872,99 +925,118 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
            </div>
            
            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {vencimientos.sort((a,b) => new Date(a.vencimiento).getTime() - new Date(b.vencimiento).getTime()).map(v => {
-                 const today = new Date();
-                 today.setHours(0,0,0,0);
-                 const exp = new Date(v.vencimiento + 'T00:00:00'); // Asegura que se parsee en hora local
-                 const diffTime = exp.getTime() - today.getTime();
-                 const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                 
-                 const isCritical = days <= 3;
-                 const isWarning = days <= 15 && days > 3;
+              {/* Combine Manual Expirations + Automated Service Alerts */}
+              {(() => {
+                 const allAlerts = [
+                    ...vencimientos.map(v => ({...v, origin: 'manual'})),
+                    ...flota.filter(f => f.maintenanceStatus !== 'ok').map(f => ({
+                        id: `AUTO-SERV-${f.id}`,
+                        vehicleId: f.id,
+                        vehicleName: f.nombre,
+                        tipo: 'Service Próximo',
+                        vencimiento: new Date().toISOString().split('T')[0], // Priority now
+                        monto: 0,
+                        pagado: false,
+                        origin: 'auto',
+                        isCritical: f.maintenanceStatus === 'critical'
+                    }))
+                 ];
 
-                 return (
-                    <div key={v.id} className={`p-8 rounded-[2.5rem] border-2 shadow-xl relative overflow-hidden transition-all group ${
-                       isCritical ? 'bg-red-50 border-red-500 shadow-red-500/20' : 
-                       isWarning ? 'bg-amber-50 border-amber-400 shadow-amber-500/10' : 
-                       'bg-white dark:bg-dark-card border-gray-100 dark:border-white/5'
-                    }`}>
-                       {/* Efecto Flash para Críticos */}
-                       {isCritical && <div className="absolute inset-0 bg-red-500/5 animate-pulse pointer-events-none"></div>}
-                       
-                       <div className="flex justify-between items-start mb-6 relative z-10">
-                          <div className="flex items-center gap-3">
-                             <div className={`p-3 rounded-2xl ${isCritical ? 'bg-red-100 text-red-600' : isWarning ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-500'}`}>
-                                {isCritical ? <AlertCircle size={24} className="animate-bounce"/> : isWarning ? <AlertTriangle size={24}/> : <CalendarClock size={24}/>}
-                             </div>
-                             <div>
-                                <h4 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">{v.vehicleName}</h4>
-                                <h3 className={`text-xl font-robust italic ${isCritical ? 'text-red-700' : isWarning ? 'text-amber-700' : 'text-bordeaux-950 dark:text-white'}`}>{v.tipo}</h3>
-                             </div>
-                          </div>
-                          <div className="text-right">
-                             <span className={`text-4xl font-robust italic leading-none ${isCritical ? 'text-red-600' : isWarning ? 'text-amber-500' : 'text-emerald-500'}`}>
-                                {days}
-                             </span>
-                             <p className="text-[7px] font-black uppercase text-gray-400">Días Restantes</p>
-                          </div>
-                       </div>
-                       
-                       <div className="space-y-3 relative z-10 bg-white/50 dark:bg-black/20 p-4 rounded-xl border border-black/5">
-                          <div className="flex justify-between items-center text-xs font-bold">
-                             <span className="text-gray-500 flex items-center gap-2"><CalendarClock size={12}/> Vencimiento</span>
-                             <span className="text-bordeaux-950 dark:text-white">{v.vencimiento}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-xs font-bold">
-                             <span className="text-gray-500 flex items-center gap-2"><HandCoins size={12}/> Costo Estimado</span>
-                             <span className="text-bordeaux-950 dark:text-white">R$ {v.monto}</span>
-                          </div>
-                       </div>
+                 return allAlerts.sort((a,b) => new Date(a.vencimiento).getTime() - new Date(b.vencimiento).getTime()).map(v => {
+                    const today = new Date();
+                    today.setHours(0,0,0,0);
+                    const exp = new Date(v.vencimiento + 'T00:00:00');
+                    const diffTime = exp.getTime() - today.getTime();
+                    const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    
+                    const isCritical = days <= 3 || (v as any).isCritical;
+                    const isWarning = (days <= 15 && days > 3) || (v as any).origin === 'auto';
+                    const isPaid = v.pagado;
 
-                       <button onClick={() => setVencimientos(vencimientos.filter(x => x.id !== v.id))} className="absolute bottom-4 right-4 p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all z-20"><Trash2 size={16}/></button>
-                    </div>
-                 );
-              })}
+                    return (
+                        <div key={v.id} className={`p-8 rounded-[2.5rem] border-2 shadow-xl relative overflow-hidden transition-all group ${
+                           isPaid ? 'bg-gray-50 border-gray-200 opacity-60 grayscale' :
+                           isCritical ? 'bg-red-50 border-red-500 shadow-red-500/30' : 
+                           isWarning ? 'bg-amber-50 border-amber-400 shadow-amber-500/20' : 
+                           'bg-white dark:bg-dark-card border-gray-100 dark:border-white/5'
+                        }`}>
+                           {!isPaid && isCritical && <div className="absolute inset-0 bg-red-600/10 animate-pulse pointer-events-none"></div>}
+                           
+                           <div className="flex justify-between items-start mb-6 relative z-10">
+                              <div className="flex items-center gap-3">
+                                 <div className={`p-3 rounded-2xl ${isPaid ? 'bg-gray-200 text-gray-500' : isCritical ? 'bg-red-100 text-red-600' : isWarning ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-500'}`}>
+                                    {isPaid ? <CheckCircle2 size={28}/> : isCritical ? <AlertCircle size={28} className="animate-bounce"/> : <AlertTriangle size={28}/>}
+                                 </div>
+                                 <div>
+                                    <h4 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">{v.vehicleName}</h4>
+                                    <h3 className={`text-xl font-robust italic ${isPaid ? 'text-gray-500 line-through' : isCritical ? 'text-red-700' : isWarning ? 'text-amber-700' : 'text-bordeaux-950 dark:text-white'}`}>{v.tipo}</h3>
+                                 </div>
+                              </div>
+                              <div className="text-right">
+                                 {isPaid ? (
+                                    <span className="text-lg font-black text-green-600 uppercase">PAGADO</span>
+                                 ) : (
+                                    <>
+                                       <span className={`text-5xl font-robust italic leading-none ${isCritical ? 'text-red-600' : isWarning ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                          {days}
+                                       </span>
+                                       <p className="text-[7px] font-black uppercase text-gray-400">Días Restantes</p>
+                                    </>
+                                 )}
+                              </div>
+                           </div>
+                           
+                           <div className="space-y-3 relative z-10 bg-white/50 dark:bg-black/20 p-4 rounded-xl border border-black/5">
+                              <div className="flex justify-between items-center text-xs font-bold">
+                                 <span className="text-gray-500 flex items-center gap-2"><CalendarClock size={12}/> Vencimiento</span>
+                                 <span className="text-bordeaux-950 dark:text-white">{v.vencimiento}</span>
+                              </div>
+                              <div className="flex justify-between items-center text-xs font-bold">
+                                 <span className="text-gray-500 flex items-center gap-2"><HandCoins size={12}/> Monto</span>
+                                 <span className="text-bordeaux-950 dark:text-white">R$ {v.monto}</span>
+                              </div>
+                           </div>
+
+                           <div className="flex gap-2 mt-4 relative z-10">
+                              {(v as any).origin === 'manual' && (
+                                 <button 
+                                    onClick={() => setVencimientos(vencimientos.map(x => x.id === v.id ? {...x, pagado: !x.pagado} : x))} 
+                                    className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${isPaid ? 'bg-gray-200 text-gray-500' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
+                                 >
+                                    {isPaid ? 'Reabrir' : 'Marcar Pagado'}
+                                 </button>
+                              )}
+                              {(v as any).origin === 'manual' && (
+                                 <button onClick={() => setVencimientos(vencimientos.filter(x => x.id !== v.id))} className="p-3 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={16}/></button>
+                              )}
+                           </div>
+                        </div>
+                    );
+                 });
+              })()}
            </div>
         </div>
       )}
 
-      {/* --- TALLER PROFESSIONAL (WITH INTEGRATED ALERTS) --- */}
+      {/* --- TALLER PROFESSIONAL (WITH EDITING & PHOTOS) --- */}
       {activeTab === 'taller' && (
         <div className="space-y-8 px-2 animate-fadeIn">
            {flota.map(v => {
              const logs = mantenimientos.filter(m => m.vehicleId === v.id);
-             // Verificar estado de alerta para este vehículo
-             const lastService = logs.sort((a,b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
              
-             let alertStatus = 'OK';
-             let alertMsg = 'Estado Óptimo';
-             let daysLeft = 99;
-             let kmLeft = 99999;
-
-             if (lastService) {
-                if (lastService.vencimientoKM) kmLeft = lastService.vencimientoKM - v.kilometrajeActual;
-                if (lastService.vencimientoFecha) {
-                   daysLeft = Math.ceil((new Date(lastService.vencimientoFecha).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-                }
-
-                if (kmLeft <= 0 || daysLeft <= 0) {
-                   alertStatus = 'CRITICAL';
-                   alertMsg = 'VENCIDO - REQUIERE ATENCIÓN';
-                } else if (kmLeft <= 500 || daysLeft <= 15) {
-                   alertStatus = 'WARNING';
-                   alertMsg = 'MANTENIMIENTO PRÓXIMO';
-                }
-             }
+             // Estado calculado en App.tsx pero revalidamos para la visualización aquí si es necesario
+             const alertStatus = v.maintenanceStatus || 'ok';
+             const alertMsg = alertStatus === 'critical' ? 'VENCIDO - CRÍTICO' : alertStatus === 'warning' ? 'ATENCIÓN REQUERIDA' : 'ESTADO ÓPTIMO';
 
              return (
                <div key={v.id} className={`bg-white dark:bg-dark-card p-8 rounded-[3.5rem] border-2 shadow-xl space-y-6 relative overflow-hidden transition-all group ${
-                 alertStatus === 'CRITICAL' ? 'border-red-500 shadow-red-500/10' : 
-                 alertStatus === 'WARNING' ? 'border-gold shadow-gold/10' : 'border-gray-100 dark:border-white/5'
+                 alertStatus === 'critical' ? 'border-red-500 shadow-red-500/30' : 
+                 alertStatus === 'warning' ? 'border-gold shadow-gold/20' : 'border-gray-100 dark:border-white/5'
                }`}>
                   
                   {/* Status Indicator Stripe */}
                   <div className={`absolute top-0 left-0 right-0 h-2 ${
-                     alertStatus === 'CRITICAL' ? 'bg-red-500' : alertStatus === 'WARNING' ? 'bg-gold' : 'bg-emerald-500'
+                     alertStatus === 'critical' ? 'bg-red-600 animate-pulse' : alertStatus === 'warning' ? 'bg-gold' : 'bg-emerald-500'
                   }`}></div>
 
                   <div className="flex flex-col md:flex-row items-center gap-8 border-b dark:border-white/5 pb-6">
@@ -978,9 +1050,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                         <div className="flex flex-wrap justify-center md:justify-start gap-3">
                            <div className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest text-white flex items-center gap-2 ${
-                              alertStatus === 'CRITICAL' ? 'bg-red-500' : alertStatus === 'WARNING' ? 'bg-gold' : 'bg-emerald-500'
+                              alertStatus === 'critical' ? 'bg-red-600' : alertStatus === 'warning' ? 'bg-gold' : 'bg-emerald-500'
                            }`}>
-                              {alertStatus === 'CRITICAL' && <AlertTriangle size={12}/>}
+                              {alertStatus === 'critical' && <AlertTriangle size={12} className="animate-bounce"/>}
+                              {alertStatus === 'warning' && <AlertCircle size={12}/>}
                               {alertMsg}
                            </div>
                            <div className="px-4 py-2 bg-gray-100 dark:bg-dark-elevated rounded-xl text-[9px] font-black text-bordeaux-800 uppercase tracking-widest">
@@ -995,14 +1068,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                           vehicleName: v.nombre, 
                           fecha: new Date().toISOString().split('T')[0], 
                           kilometraje: v.kilometrajeActual, 
-                          descripcion: 'Nuevo Mantenimiento', 
+                          descripcion: 'Mantenimiento Preventivo', 
                           monto: 0,
                           tipo: 'Preventivo',
                           vencimientoKM: v.kilometrajeActual + 5000,
                           vencimientoFecha: new Date(Date.now() + 1000 * 60 * 60 * 24 * 90).toISOString().split('T')[0],
-                          realizado: true
+                          realizado: true,
+                          images: []
                        };
                        setMantenimientos([...mantenimientos, newM]);
+                       setExpandedMaintenance(prev => ({...prev, [v.id]: true}));
                      }} className="p-4 bg-bordeaux-950 text-white rounded-2xl shadow-xl hover:scale-105 transition-transform flex items-center gap-2">
                         <Plus size={18}/> <span className="text-[10px] font-black uppercase tracking-widest">Nuevo Registro</span>
                      </button>
@@ -1022,12 +1097,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                       <div key={log.id} className="bg-gray-50 dark:bg-dark-base p-6 rounded-[2.5rem] border border-gray-200 dark:border-white/5 space-y-4 hover:border-gold/30 transition-all animate-slideUp">
                          <div className="flex flex-col md:flex-row gap-4">
                             <div className="flex-1 space-y-2">
-                               <p className="text-[8px] font-black text-gray-400 uppercase">Descripción</p>
-                               <input type="text" value={log.descripcion} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, descripcion: e.target.value} : m))} className="w-full bg-transparent border-b border-gray-300 text-sm font-bold dark:text-white outline-none focus:border-gold" />
+                               <p className="text-[8px] font-black text-gray-400 uppercase">Descripción del Servicio</p>
+                               <input type="text" value={log.descripcion} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, descripcion: e.target.value} : m))} className="w-full bg-white dark:bg-dark-elevated rounded-xl px-4 py-2 border-0 text-sm font-bold dark:text-white outline-none focus:ring-2 focus:ring-gold" />
                             </div>
                             <div className="w-full md:w-32 space-y-2">
                                <p className="text-[8px] font-black text-gray-400 uppercase">Costo (BRL)</p>
-                               <input type="number" value={log.monto} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, monto: Number(e.target.value)} : m))} className="w-full bg-transparent border-b border-gray-300 text-sm font-black text-bordeaux-800 text-right outline-none focus:border-gold" />
+                               <input type="number" value={log.monto} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, monto: Number(e.target.value)} : m))} className="w-full bg-white dark:bg-dark-elevated rounded-xl px-4 py-2 border-0 text-sm font-black text-bordeaux-800 text-right outline-none focus:ring-2 focus:ring-gold" />
                             </div>
                          </div>
                          
@@ -1041,14 +1116,35 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                <input type="number" value={log.kilometraje} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, kilometraje: Number(e.target.value)} : m))} className="bg-transparent text-[10px] font-bold w-full" />
                             </div>
                             <div className="space-y-1">
-                               <p className="text-[7px] font-black text-rose-500 uppercase">Vence (Fecha)</p>
+                               <p className="text-[7px] font-black text-rose-500 uppercase">Próx Vencimiento (Fecha)</p>
                                <input type="date" value={log.vencimientoFecha} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, vencimientoFecha: e.target.value} : m))} className="bg-transparent text-[10px] font-bold w-full text-rose-600" />
                             </div>
                             <div className="space-y-1">
-                               <p className="text-[7px] font-black text-rose-500 uppercase">Vence (KM)</p>
+                               <p className="text-[7px] font-black text-rose-500 uppercase">Próx Vencimiento (KM)</p>
                                <input type="number" value={log.vencimientoKM} onChange={e => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, vencimientoKM: Number(e.target.value)} : m))} className="bg-transparent text-[10px] font-bold w-full text-rose-600" />
                             </div>
                          </div>
+
+                         {/* Photo Upload Area */}
+                         <div>
+                            <div className="flex gap-2 items-center mb-2">
+                               <Camera size={14} className="text-gray-400"/>
+                               <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Evidencia Fotográfica</span>
+                            </div>
+                            <div className="flex gap-2 overflow-x-auto pb-2">
+                               {(log.images || []).map((img, idx) => (
+                                  <div key={idx} className="w-16 h-16 rounded-xl overflow-hidden border border-gray-200 relative group shrink-0">
+                                     <img src={img} className="w-full h-full object-cover" />
+                                     <button onClick={() => setMantenimientos(mantenimientos.map(m => m.id === log.id ? {...m, images: m.images?.filter((_, i) => i !== idx)} : m))} className="absolute inset-0 bg-red-500/50 hidden group-hover:flex items-center justify-center text-white"><X size={12}/></button>
+                                  </div>
+                               ))}
+                               <label className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors shrink-0">
+                                  <input type="file" className="hidden" accept="image/*" onChange={(e) => handleMaintenancePhotoUpload(e, log.id)} />
+                                  <Plus size={16} className="text-gray-400"/>
+                               </label>
+                            </div>
+                         </div>
+
                          <div className="flex justify-end">
                             <button onClick={() => setMantenimientos(mantenimientos.filter(x => x.id !== log.id))} className="text-[9px] font-black text-gray-300 hover:text-red-500 uppercase tracking-widest flex items-center gap-1"><Trash2 size={12}/> Eliminar Registro</button>
                          </div>
@@ -1061,325 +1157,225 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      {/* --- INSPECCIÓN PROFESIONAL --- */}
-      {activeTab === 'checklists' && (
-        <div className="space-y-6 px-2 animate-fadeIn">
-           {flota.map(v => (
-             <div key={v.id} className="bg-white dark:bg-dark-card p-8 rounded-[3.5rem] border dark:border-white/5 shadow-xl space-y-6">
-                <div className="flex justify-between items-center">
-                   <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-gray-100 rounded-xl overflow-hidden"><img src={v.img} className="w-full h-full object-contain"/></div>
-                      <h4 className="text-xl font-robust dark:text-white uppercase italic">{v.nombre}</h4>
+      {/* --- FLOTA TAB --- */}
+      {activeTab === 'flota' && (
+        <div className="space-y-6 animate-fadeIn px-2">
+           <button onClick={() => setShowAddVehicle(!showAddVehicle)} className="w-full py-6 bg-bordeaux-950 text-white rounded-[2.5rem] font-black text-[11px] uppercase tracking-[0.3em] flex items-center justify-center gap-4 hover:scale-[1.01] transition-all shadow-xl">
+              <Plus size={24}/> Agregar Nueva Unidad
+           </button>
+           
+           {showAddVehicle && (
+             <div className="bg-white dark:bg-dark-card p-8 rounded-[3rem] border-2 border-gold shadow-2xl space-y-6">
+                <h3 className="text-2xl font-robust text-bordeaux-950 dark:text-white italic">Registro de Unidad</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <input type="text" placeholder="Nombre Modelo *" value={newVehicle.nombre} onChange={e => setNewVehicle({...newVehicle, nombre: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
+                   <input type="text" placeholder="Placa / Patente *" value={newVehicle.placa} onChange={e => setNewVehicle({...newVehicle, placa: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
+                   <input type="number" placeholder="Precio Diario (BRL) *" value={newVehicle.precio || ''} onChange={e => setNewVehicle({...newVehicle, precio: Number(e.target.value)})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
+                   <input type="text" placeholder="URL Imagen" value={newVehicle.img} onChange={e => setNewVehicle({...newVehicle, img: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
+                   <input type="text" placeholder="Color" value={newVehicle.color} onChange={e => setNewVehicle({...newVehicle, color: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
+                   <input type="number" placeholder="KM Actual" value={newVehicle.kilometrajeActual || ''} onChange={e => setNewVehicle({...newVehicle, kilometrajeActual: Number(e.target.value)})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                   <select value={newVehicle.transmision} onChange={e => setNewVehicle({...newVehicle, transmision: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none">
+                      <option value="Automático">Automático</option>
+                      <option value="Manual">Manual</option>
+                   </select>
+                   <select value={newVehicle.combustible} onChange={e => setNewVehicle({...newVehicle, combustible: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none">
+                      <option value="Nafta">Nafta</option>
+                      <option value="Diesel">Diesel</option>
+                      <option value="Híbrido">Híbrido</option>
+                      <option value="Eléctrico">Eléctrico</option>
+                   </select>
+                   <input type="number" placeholder="Asientos" value={newVehicle.asientos} onChange={e => setNewVehicle({...newVehicle, asientos: Number(e.target.value)})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
+                </div>
+                <div>
+                   <div className="flex gap-2 mb-2">
+                      <input type="text" placeholder="Especificación (ej: Techo Solar)" value={tempSpec} onChange={e => setTempSpec(e.target.value)} className="flex-1 bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
+                      <button onClick={addSpec} className="p-4 bg-gray-200 rounded-2xl hover:bg-gold hover:text-white transition-colors"><Plus size={20}/></button>
                    </div>
-                   <button onClick={() => setShowNewChecklist(v.id)} className="p-3 bg-bordeaux-950 text-gold rounded-2xl shadow-lg hover:scale-105 transition-transform flex items-center gap-2">
-                     <Plus size={18}/> <span className="hidden md:inline text-[9px] font-black uppercase tracking-widest">Nueva Inspección</span>
-                   </button>
+                   <div className="flex flex-wrap gap-2">
+                      {newVehicle.specs?.map((s, i) => (
+                         <span key={i} className="bg-gray-100 px-3 py-1 rounded-lg text-[10px] font-black uppercase text-gray-500">{s}</span>
+                      ))}
+                   </div>
                 </div>
-
-                {/* Lista de Inspecciones */}
-                <div className="space-y-3">
-                   {(v.checklists || []).length === 0 && <p className="text-center text-[10px] text-gray-300 font-bold uppercase py-4">Sin inspecciones registradas</p>}
-                   {(v.checklists || []).map((c) => (
-                     <div key={c.id} className="bg-gray-50 dark:bg-dark-base p-6 rounded-[2rem] border dark:border-white/5 relative group hover:border-gold/30 transition-all">
-                        <div className="flex justify-between items-start mb-4">
-                           <div>
-                              <span className={`px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest text-white ${c.tipo === 'Check-In' ? 'bg-emerald-500' : 'bg-blue-500'}`}>{c.tipo}</span>
-                              <p className="text-[10px] font-bold text-gray-500 mt-2">{c.fecha} • {c.responsable} • {c.kilometraje} KM</p>
-                           </div>
-                           <button onClick={() => {
-                              if(confirm('¿Borrar inspección permanentemente?')) {
-                                 const updatedFlota = flota.map(veh => veh.id === v.id ? {...veh, checklists: veh.checklists?.filter(ck => ck.id !== c.id)} : veh);
-                                 setFlota(updatedFlota);
-                              }
-                           }} className="p-2 text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
-                        </div>
-                        
-                        {/* Resumen Visual */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                           {['Exterior', 'Interior', 'Mecánica', 'Docs'].map((cat, i) => {
-                              const items = i === 0 ? c.exterior : i === 1 ? c.interior : i === 2 ? c.mecanica : c.documentacion;
-                              const issues = (items || []).filter(x => x.status === 'bad').length;
-                              return (
-                                 <div key={i} className={`p-2 rounded-xl text-center border ${issues > 0 ? 'bg-red-50 border-red-100 text-red-600' : 'bg-green-50 border-green-100 text-green-600'}`}>
-                                    <p className="text-[7px] font-black uppercase">{cat}</p>
-                                    <p className="text-[9px] font-bold">{issues > 0 ? `${issues} Alertas` : 'OK'}</p>
-                                 </div>
-                              );
-                           })}
-                        </div>
-                     </div>
-                   ))}
-                </div>
+                <button onClick={handleSaveVehicle} className="w-full py-5 bordeaux-gradient text-white rounded-[2rem] font-black uppercase tracking-widest shadow-xl">Guardar Vehículo</button>
              </div>
-           ))}
+           )}
 
-           {/* Modal Nueva Inspección */}
-           {showNewChecklist && (
-             <div className="fixed inset-0 z-[200] flex items-center justify-center bg-dark-base/90 backdrop-blur-sm p-4">
-                <div className="bg-white dark:bg-dark-card w-full max-w-2xl h-[90vh] rounded-[3rem] p-8 overflow-y-auto shadow-2xl border-4 border-gold relative animate-slideUp">
-                   <button onClick={() => setShowNewChecklist(null)} className="absolute top-6 right-6 p-2 bg-gray-100 rounded-full hover:bg-red-100 hover:text-red-500 transition-all"><X size={20}/></button>
-                   <h3 className="text-2xl font-serif font-bold text-bordeaux-950 mb-6 text-center">Inspección Profesional</h3>
-                   <InspectionForm 
-                      vehicleId={showNewChecklist}
-                      flota={flota}
-                      setFlota={setFlota}
-                      onClose={() => setShowNewChecklist(null)}
-                   />
-                </div>
-             </div>
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {flota.map(v => (
+                 <div key={v.id} className="bg-white dark:bg-dark-card p-6 rounded-[2.5rem] border dark:border-white/5 flex items-center gap-4 shadow-sm hover:shadow-md transition-all">
+                    <img src={v.img} className="w-20 h-20 object-contain" />
+                    <div className="flex-1">
+                       <h4 className="font-robust dark:text-white uppercase italic">{v.nombre}</h4>
+                       <p className="text-[9px] font-black text-gold uppercase tracking-widest">{v.placa} | {v.color}</p>
+                       <div className="flex gap-2 mt-2">
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase ${v.estado === 'Disponible' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{v.estado}</span>
+                          <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-500 text-[8px] font-bold uppercase">{v.kilometrajeActual} KM</span>
+                       </div>
+                    </div>
+                 </div>
+              ))}
+           </div>
+        </div>
+      )}
+
+      {/* --- CHECKLISTS TAB --- */}
+      {activeTab === 'checklists' && (
+        <div className="flex flex-col items-center justify-center py-20 text-center space-y-6 opacity-50 animate-fadeIn">
+           <ClipboardList size={60} className="text-gray-300"/>
+           <div>
+              <h3 className="text-2xl font-robust text-gray-400 italic">Módulo de Inspección</h3>
+              <p className="text-sm font-bold text-gray-300">Próximamente disponible en v4.0</p>
+           </div>
+        </div>
+      )}
+
+      {/* --- AI STUDIO TAB --- */}
+      {activeTab === 'ai_studio' && (
+        <div className="space-y-6 animate-fadeIn px-2">
+           <div className="flex gap-2 bg-gray-100 dark:bg-dark-elevated p-1 rounded-2xl mb-4">
+              <button onClick={() => setAiTab('chat')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${aiTab === 'chat' ? 'bg-white shadow-md text-bordeaux-950' : 'text-gray-400'}`}>Asistente Operativo</button>
+              <button onClick={() => setAiTab('veo')} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${aiTab === 'veo' ? 'bg-white shadow-md text-bordeaux-950' : 'text-gray-400'}`}>Estudio Creativo (VEO)</button>
+           </div>
+
+           {aiTab === 'chat' && (
+              <div className="bg-white dark:bg-dark-card rounded-[3rem] shadow-xl border dark:border-white/5 overflow-hidden h-[600px] flex flex-col">
+                 <div className="p-6 bg-bordeaux-950 text-white flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                       <Bot size={24} className="text-gold"/>
+                       <div>
+                          <h3 className="font-robust italic">Gemini 3 Pro</h3>
+                          <p className="text-[8px] font-black text-gold uppercase tracking-widest">JM Intelligence</p>
+                       </div>
+                    </div>
+                    <div className="flex gap-2">
+                       <button onClick={() => setGroundingMode('none')} className={`p-2 rounded-lg ${groundingMode === 'none' ? 'bg-white/20' : ''}`} title="Sin Grounding"><Sparkles size={16}/></button>
+                       <button onClick={() => setGroundingMode('search')} className={`p-2 rounded-lg ${groundingMode === 'search' ? 'bg-white/20' : ''}`} title="Google Search"><Globe size={16}/></button>
+                       <button onClick={() => setGroundingMode('maps')} className={`p-2 rounded-lg ${groundingMode === 'maps' ? 'bg-white/20' : ''}`} title="Google Maps"><MapPin size={16}/></button>
+                    </div>
+                 </div>
+                 
+                 <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50 dark:bg-dark-base">
+                    {chatMessages.map((msg, idx) => (
+                       <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-bordeaux-900 text-white rounded-br-none' : 'bg-white dark:bg-dark-elevated dark:text-gray-200 border border-gray-100 dark:border-white/5 rounded-bl-none shadow-sm'}`}>
+                             <p className="whitespace-pre-wrap">{msg.text}</p>
+                             {msg.sources && msg.sources.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-white/10 space-y-1">
+                                   <p className="text-[9px] font-black uppercase text-gray-400">Fuentes:</p>
+                                   {msg.sources.map((s, i) => (
+                                      <a key={i} href={s.uri} target="_blank" rel="noopener noreferrer" className="block text-[10px] text-blue-500 hover:underline truncate">{s.title || s.uri}</a>
+                                   ))}
+                                </div>
+                             )}
+                          </div>
+                       </div>
+                    ))}
+                    {isChatLoading && (
+                       <div className="flex justify-start">
+                          <div className="bg-white dark:bg-dark-elevated p-4 rounded-2xl rounded-bl-none shadow-sm flex items-center gap-2">
+                             <Loader2 size={16} className="animate-spin text-gold"/>
+                             <span className="text-xs text-gray-400 animate-pulse">Pensando...</span>
+                          </div>
+                       </div>
+                    )}
+                 </div>
+
+                 <div className="p-4 bg-white dark:bg-dark-elevated border-t dark:border-white/5">
+                    <div className="flex gap-2">
+                       <input 
+                          type="text" 
+                          value={chatInput} 
+                          onChange={e => setChatInput(e.target.value)} 
+                          onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
+                          placeholder="Escriba su consulta..." 
+                          className="flex-1 bg-gray-50 dark:bg-dark-base rounded-xl px-4 py-3 text-sm font-medium border-0 outline-none focus:ring-2 focus:ring-gold"
+                       />
+                       <button onClick={handleSendMessage} disabled={isChatLoading || !chatInput.trim()} className="p-3 bg-bordeaux-950 text-white rounded-xl disabled:opacity-50 hover:bg-black transition-all">
+                          <Send size={20}/>
+                       </button>
+                    </div>
+                 </div>
+              </div>
+           )}
+
+           {aiTab === 'veo' && (
+              <div className="bg-white dark:bg-dark-card p-8 rounded-[3rem] border-2 border-gold shadow-2xl space-y-6">
+                 <div className="text-center space-y-2">
+                    <div className="w-16 h-16 bg-gradient-to-tr from-purple-600 to-blue-600 rounded-2xl flex items-center justify-center mx-auto text-white shadow-lg mb-4">
+                       <Video size={32}/>
+                    </div>
+                    <h3 className="text-2xl font-robust italic dark:text-white">Generador de Video (VEO)</h3>
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Marketing Content Creator</p>
+                 </div>
+
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                       <div>
+                          <label className="text-[9px] font-black text-gray-400 uppercase mb-2 block">Prompt Creativo</label>
+                          <textarea 
+                             value={veoPrompt} 
+                             onChange={e => setVeoPrompt(e.target.value)} 
+                             placeholder="Describe el video que deseas generar (ej: Vehículo deportivo recorriendo la costanera al atardecer, cinematico, 4k)..."
+                             className="w-full bg-gray-50 dark:bg-dark-base rounded-2xl p-4 text-sm font-medium h-32 resize-none border-0 outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                       </div>
+                       <div>
+                          <label className="text-[9px] font-black text-gray-400 uppercase mb-2 block">Imagen de Referencia</label>
+                          <label className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-dark-base rounded-2xl cursor-pointer hover:bg-gray-100 transition-all border border-dashed border-gray-300">
+                             <input type="file" className="hidden" accept="image/*" onChange={handleVeoImageUpload} />
+                             <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-gray-400 shadow-sm"><ImageIcon size={20}/></div>
+                             <div className="flex-1">
+                                <p className="text-xs font-bold dark:text-white">Cargar Imagen Base</p>
+                                <p className="text-[9px] text-gray-400">JPG, PNG (Max 5MB)</p>
+                             </div>
+                             {veoImage && <div className="w-12 h-12 rounded-lg overflow-hidden border border-purple-500"><img src={veoImage} className="w-full h-full object-cover"/></div>}
+                          </label>
+                       </div>
+                       <div className="flex gap-4">
+                          <label className="flex-1 p-3 bg-gray-50 dark:bg-dark-base rounded-xl flex items-center gap-2 cursor-pointer border border-transparent has-[:checked]:border-purple-500 has-[:checked]:bg-purple-50">
+                             <input type="radio" name="ar" checked={veoAspectRatio === '16:9'} onChange={() => setVeoAspectRatio('16:9')} className="hidden"/>
+                             <div className="w-8 h-4 border-2 border-gray-400 rounded-sm"></div>
+                             <span className="text-[10px] font-black uppercase">Horizontal (16:9)</span>
+                          </label>
+                          <label className="flex-1 p-3 bg-gray-50 dark:bg-dark-base rounded-xl flex items-center gap-2 cursor-pointer border border-transparent has-[:checked]:border-purple-500 has-[:checked]:bg-purple-50">
+                             <input type="radio" name="ar" checked={veoAspectRatio === '9:16'} onChange={() => setVeoAspectRatio('9:16')} className="hidden"/>
+                             <div className="w-4 h-8 border-2 border-gray-400 rounded-sm"></div>
+                             <span className="text-[10px] font-black uppercase">Vertical (9:16)</span>
+                          </label>
+                       </div>
+                       <button onClick={handleGenerateVideo} disabled={isVeoGenerating || !veoImage} className="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl hover:scale-[1.02] transition-transform disabled:opacity-50 flex items-center justify-center gap-2">
+                          {isVeoGenerating ? <Loader2 size={20} className="animate-spin"/> : <Play size={20}/>}
+                          {isVeoGenerating ? 'Generando Video...' : 'Generar Video AI'}
+                       </button>
+                    </div>
+
+                    <div className="bg-black/90 rounded-[2.5rem] flex items-center justify-center relative overflow-hidden min-h-[300px]">
+                       {generatedVideoUrl ? (
+                          <video src={generatedVideoUrl} controls autoPlay loop className="w-full h-full object-contain" />
+                       ) : (
+                          <div className="text-center space-y-4 opacity-50">
+                             <Video size={48} className="mx-auto text-white"/>
+                             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Vista Previa</p>
+                          </div>
+                       )}
+                       {isVeoGenerating && (
+                          <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center space-y-4 z-10">
+                             <Loader2 size={40} className="text-purple-500 animate-spin"/>
+                             <p className="text-xs font-black text-white uppercase tracking-widest animate-pulse">Renderizando Escena...</p>
+                          </div>
+                       )}
+                    </div>
+                 </div>
+              </div>
            )}
         </div>
       )}
 
-      {/* --- AI STUDIO (GEMINI 3 PRO / VEO 3.1) --- */}
-      {activeTab === 'ai_studio' && (
-        <div className="space-y-6 animate-fadeIn px-2 h-[700px] flex flex-col">
-           {/* Sub-Navigation for AI */}
-           <div className="flex justify-center gap-4 mb-4">
-              <button onClick={() => setAiTab('chat')} className={`px-6 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all ${aiTab === 'chat' ? 'bg-bordeaux-950 text-white shadow-lg' : 'bg-white text-gray-400'}`}>
-                 <Bot size={14} className="inline mr-2"/> Asistente JM
-              </button>
-              <button onClick={() => setAiTab('veo')} className={`px-6 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all ${aiTab === 'veo' ? 'bg-bordeaux-950 text-white shadow-lg' : 'bg-white text-gray-400'}`}>
-                 <Video size={14} className="inline mr-2"/> Veo Studio
-              </button>
-           </div>
-
-           <div className="flex-1 bg-white dark:bg-dark-card rounded-[3rem] border border-gold/10 shadow-2xl overflow-hidden relative">
-              {/* CHAT INTERFACE */}
-              {aiTab === 'chat' && (
-                <div className="h-full flex flex-col">
-                   {/* Tool Toggles */}
-                   <div className="p-4 bg-gray-50/50 dark:bg-dark-elevated border-b dark:border-white/5 flex justify-center gap-3">
-                      <button onClick={() => setGroundingMode(groundingMode === 'search' ? 'none' : 'search')} className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase border flex items-center gap-2 transition-all ${groundingMode === 'search' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-white text-gray-400 border-gray-100'}`}>
-                         <Globe size={12}/> Google Search
-                      </button>
-                      <button onClick={() => setGroundingMode(groundingMode === 'maps' ? 'none' : 'maps')} className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase border flex items-center gap-2 transition-all ${groundingMode === 'maps' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-white text-gray-400 border-gray-100'}`}>
-                         <MapPin size={12}/> Google Maps
-                      </button>
-                   </div>
-
-                   {/* Messages Area */}
-                   <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                      {chatMessages.length === 0 && (
-                        <div className="flex flex-col items-center justify-center h-full opacity-30">
-                           <Bot size={60} className="mb-4 text-bordeaux-800"/>
-                           <p className="text-[10px] font-black uppercase tracking-widest">Inicie conversación con Gemini 3 Pro</p>
-                        </div>
-                      )}
-                      {chatMessages.map((msg, idx) => (
-                         <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[80%] p-5 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-bordeaux-950 text-white rounded-tr-none' : 'bg-gray-100 dark:bg-dark-elevated dark:text-gray-200 rounded-tl-none'}`}>
-                               <p className="leading-relaxed">{msg.text}</p>
-                               {msg.sources && msg.sources.length > 0 && (
-                                  <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/5">
-                                     <p className="text-[8px] font-black opacity-50 uppercase mb-2">Fuentes Consultadas:</p>
-                                     <div className="flex flex-wrap gap-2">
-                                        {msg.sources.map((src, i) => (
-                                           <a key={i} href={src.uri} target="_blank" className="bg-white dark:bg-black/20 px-3 py-1 rounded-lg text-[9px] text-blue-500 hover:text-blue-600 truncate max-w-[200px] flex items-center gap-1">
-                                              <Globe size={10}/> {src.title}
-                                           </a>
-                                        ))}
-                                     </div>
-                                  </div>
-                               )}
-                            </div>
-                         </div>
-                      ))}
-                      {isChatLoading && (
-                         <div className="flex justify-start">
-                            <div className="bg-gray-100 p-4 rounded-2xl rounded-tl-none"><Loader2 className="animate-spin text-gray-400" size={16}/></div>
-                         </div>
-                      )}
-                   </div>
-
-                   {/* Input Area */}
-                   <div className="p-4 bg-white dark:bg-dark-card border-t dark:border-white/5 flex gap-3">
-                      <input 
-                         value={chatInput}
-                         onChange={e => setChatInput(e.target.value)}
-                         onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
-                         placeholder="Pregunte a Gemini 3 Pro (ej: Estrategias de precios, buscar noticias...)"
-                         className="flex-1 bg-gray-50 dark:bg-dark-elevated rounded-2xl px-6 py-4 text-sm outline-none focus:ring-2 focus:ring-gold font-medium"
-                      />
-                      <button onClick={handleSendMessage} className="p-4 bg-bordeaux-950 text-white rounded-2xl hover:scale-105 transition-transform"><ArrowRight size={20}/></button>
-                   </div>
-                </div>
-              )}
-
-              {/* VEO STUDIO INTERFACE */}
-              {aiTab === 'veo' && (
-                <div className="h-full flex flex-col p-8 overflow-y-auto">
-                   <div className="flex flex-col md:flex-row gap-8 h-full">
-                      <div className="flex-1 space-y-6">
-                         <div className="space-y-3">
-                            <label className="text-[9px] font-black uppercase text-gray-400 ml-2 flex items-center gap-2"><ImageIcon size={12}/> 1. Imagen Base</label>
-                            <label className="w-full h-48 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer hover:bg-gold/5 transition-colors overflow-hidden relative group">
-                               <input type="file" accept="image/*" onChange={handleVeoImageUpload} className="hidden" />
-                               {veoImage ? (
-                                  <img src={veoImage} className="w-full h-full object-cover" />
-                               ) : (
-                                  <>
-                                     <div className="p-4 bg-gray-100 rounded-full mb-3 group-hover:scale-110 transition-transform"><Plus size={24} className="text-gray-400"/></div>
-                                     <span className="text-[8px] font-black uppercase text-gray-300 tracking-widest">Arrastre o Click para subir</span>
-                                  </>
-                               )}
-                            </label>
-                         </div>
-                         <div className="space-y-3">
-                            <label className="text-[9px] font-black uppercase text-gray-400 ml-2 flex items-center gap-2"><Bot size={12}/> 2. Prompt de Animación</label>
-                            <textarea 
-                               value={veoPrompt} 
-                               onChange={e => setVeoPrompt(e.target.value)}
-                               placeholder="Describa el movimiento deseado (ej: El auto acelera en una autopista futurista con luces de neón...)"
-                               className="w-full h-32 bg-gray-50 dark:bg-dark-elevated rounded-2xl p-5 text-sm resize-none outline-none focus:ring-2 focus:ring-gold font-medium"
-                            />
-                         </div>
-                         <div className="flex gap-4">
-                            <div className="space-y-1">
-                               <label className="text-[8px] font-black uppercase text-gray-300 ml-1">Formato</label>
-                               <select value={veoAspectRatio} onChange={e => setVeoAspectRatio(e.target.value as any)} className="bg-gray-50 dark:bg-dark-elevated px-6 py-4 rounded-2xl text-xs font-bold border-0 outline-none">
-                                  <option value="16:9">Horizontal (16:9)</option>
-                                  <option value="9:16">Vertical (9:16)</option>
-                               </select>
-                            </div>
-                            <button onClick={handleGenerateVideo} disabled={isVeoGenerating || !veoImage} className="flex-1 bordeaux-gradient mt-auto text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 hover:scale-[1.02] disabled:opacity-50 transition-all shadow-xl h-[52px]">
-                               {isVeoGenerating ? <Loader2 className="animate-spin" size={16}/> : <Play size={16} fill="white"/>} 
-                               {isVeoGenerating ? 'Renderizando...' : 'Generar Video con Veo'}
-                            </button>
-                         </div>
-                      </div>
-                      
-                      <div className="flex-1 bg-black rounded-[2.5rem] flex items-center justify-center relative overflow-hidden shadow-2xl border-4 border-gray-900">
-                         {generatedVideoUrl ? (
-                            <video src={generatedVideoUrl} controls autoPlay loop className="w-full h-full object-contain" />
-                         ) : (
-                            <div className="text-center opacity-30">
-                               <Video size={60} className="mx-auto text-white mb-4"/>
-                               <p className="text-[9px] font-black text-white uppercase tracking-[0.5em]">Vista Previa</p>
-                            </div>
-                         )}
-                         {isVeoGenerating && (
-                            <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-white z-10 backdrop-blur-sm">
-                               <Loader2 size={50} className="animate-spin mb-6 text-gold"/>
-                               <p className="text-[10px] font-black uppercase tracking-widest animate-pulse">Procesando con Veo 3.1...</p>
-                            </div>
-                         )}
-                      </div>
-                   </div>
-                </div>
-              )}
-           </div>
-        </div>
-      )}
     </div>
   );
-};
-
-// Subcomponente Formulario Inspección
-const InspectionForm: React.FC<{ vehicleId: string, flota: Vehicle[], setFlota: (f: Vehicle[]) => void, onClose: () => void }> = ({ vehicleId, flota, setFlota, onClose }) => {
-   const vehicle = flota.find(v => v.id === vehicleId);
-   const [data, setData] = useState<ChecklistLog>({
-      id: `C-${Date.now()}`,
-      tipo: 'Check-In',
-      fecha: new Date().toISOString().split('T')[0],
-      responsable: '',
-      kilometraje: vehicle?.kilometrajeActual || 0,
-      combustible: 'Full',
-      exterior: [
-         { label: 'Paragolpes Delantero', status: 'ok' },
-         { label: 'Paragolpes Trasero', status: 'ok' },
-         { label: 'Puertas Laterales', status: 'ok' },
-         { label: 'Capó y Techo', status: 'ok' },
-         { label: 'Cristales/Espejos', status: 'ok' }
-      ],
-      interior: [
-         { label: 'Tapizado', status: 'ok' },
-         { label: 'Tablero/Instrumentos', status: 'ok' },
-         { label: 'Limpieza General', status: 'ok' }
-      ],
-      mecanica: [
-         { label: 'Luces', status: 'ok' },
-         { label: 'Neumáticos', status: 'ok' },
-         { label: 'Niveles (Agua/Aceite)', status: 'ok' }
-      ],
-      documentacion: [
-         { label: 'Cédula Verde', status: 'ok' },
-         { label: 'Habilitación', status: 'ok' },
-         { label: 'Seguro al Día', status: 'ok' }
-      ],
-      observacionesGlobales: '',
-      firmado: false
-   });
-
-   const toggleItem = (category: 'exterior' | 'interior' | 'mecanica' | 'documentacion', idx: number) => {
-      const items = [...data[category]];
-      items[idx].status = items[idx].status === 'ok' ? 'bad' : 'ok';
-      setData({...data, [category]: items});
-   };
-
-   const handleSubmit = () => {
-      const updatedFlota = flota.map(v => v.id === vehicleId ? {...v, checklists: [data, ...(v.checklists || [])]} : v);
-      setFlota(updatedFlota);
-      onClose();
-   };
-
-   return (
-      <div className="space-y-6">
-         <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-               <label className="text-[9px] font-black uppercase text-gray-400">Tipo Movimiento</label>
-               <select value={data.tipo} onChange={e => setData({...data, tipo: e.target.value as any})} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-bold border-0">
-                  <option value="Check-In">Entrada (Check-In)</option>
-                  <option value="Check-Out">Salida (Check-Out)</option>
-               </select>
-            </div>
-            <div className="space-y-1">
-               <label className="text-[9px] font-black uppercase text-gray-400">Responsable</label>
-               <input type="text" value={data.responsable} onChange={e => setData({...data, responsable: e.target.value})} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-bold border-0" placeholder="Nombre..." />
-            </div>
-            <div className="space-y-1">
-               <label className="text-[9px] font-black uppercase text-gray-400">Kilometraje</label>
-               <input type="number" value={data.kilometraje} onChange={e => setData({...data, kilometraje: Number(e.target.value)})} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-bold border-0" />
-            </div>
-            <div className="space-y-1">
-               <label className="text-[9px] font-black uppercase text-gray-400">Combustible</label>
-               <select value={data.combustible} onChange={e => setData({...data, combustible: e.target.value as any})} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-bold border-0">
-                  <option value="Full">Lleno (Full)</option>
-                  <option value="3/4">3/4 Tanque</option>
-                  <option value="1/2">1/2 Tanque</option>
-                  <option value="1/4">1/4 Tanque</option>
-                  <option value="1/8">Reserva</option>
-               </select>
-            </div>
-         </div>
-
-         {/* Categorías Dinámicas */}
-         {['exterior', 'interior', 'mecanica', 'documentacion'].map((cat) => (
-            <div key={cat} className="bg-gray-50 p-4 rounded-2xl">
-               <h5 className="text-[10px] font-black uppercase text-bordeaux-800 mb-3 tracking-widest border-b border-gray-200 pb-1">{cat}</h5>
-               <div className="space-y-2">
-                  {(data[cat as keyof ChecklistLog] as InspectionItem[]).map((item, idx) => (
-                     <div key={idx} onClick={() => toggleItem(cat as any, idx)} className="flex justify-between items-center p-2 bg-white rounded-xl border border-gray-100 cursor-pointer hover:bg-gray-50">
-                        <span className="text-[10px] font-bold uppercase">{item.label}</span>
-                        <div className={`px-3 py-1 rounded-lg text-[8px] font-black uppercase transition-colors ${item.status === 'ok' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                           {item.status === 'ok' ? 'APROBADO' : 'OBSERVADO'}
-                        </div>
-                     </div>
-                  ))}
-               </div>
-            </div>
-         ))}
-
-         <div className="space-y-2">
-            <label className="text-[9px] font-black uppercase text-gray-400">Observaciones Generales</label>
-            <textarea value={data.observacionesGlobales} onChange={e => setData({...data, observacionesGlobales: e.target.value})} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-medium border-0 min-h-[80px]" placeholder="Detalles adicionales..." />
-         </div>
-
-         <button onClick={handleSubmit} className="w-full py-4 bg-bordeaux-950 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:scale-[1.02] transition-transform">
-            Guardar Inspección
-         </button>
-      </div>
-   );
 };
 
 export default AdminPanel;

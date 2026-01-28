@@ -41,6 +41,7 @@ export interface MaintenanceRecord {
   vencimientoFecha?: string;
   vencimientoKM?: number;
   realizado: boolean;
+  images?: string[]; // Added for photos
 }
 
 export interface ExpirationRecord {
@@ -72,6 +73,8 @@ export interface Vehicle {
   tipo?: string;
   lastLat?: number;
   lastLng?: number;
+  // Propiedad calculada para alertas de UI
+  maintenanceStatus?: 'ok' | 'warning' | 'critical'; 
 }
 
 export interface Reservation {

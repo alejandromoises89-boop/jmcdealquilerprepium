@@ -85,6 +85,38 @@ const App: React.FC = () => {
     localStorage.setItem('jm_theme', darkMode ? 'dark' : 'light');
   }, [flota, reservations, gastos, mantenimientos, vencimientos, breakdowns, language, darkMode]);
 
+  // CALCULO DINAMICO DE ESTADO DE MANTENIMIENTO
+  const flotaWithStatus = flota.map(v => {
+    let status: 'ok' | 'warning' | 'critical' = 'ok';
+    
+    // 1. Chequeo por mantenimientoKM propiedad del vehículo
+    if (v.mantenimientoKM) {
+       const diff = v.mantenimientoKM - v.kilometrajeActual;
+       if (diff <= 0) status = 'critical';
+       else if (diff <= 1000) status = 'warning'; // 1000km aviso
+    }
+
+    // 2. Chequeo por último registro de taller
+    const logs = mantenimientos.filter(m => m.vehicleId === v.id);
+    if (logs.length > 0) {
+       const last = logs.sort((a,b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+       if (last.vencimientoKM) {
+          const diffKM = last.vencimientoKM - v.kilometrajeActual;
+          if (diffKM <= 0) status = 'critical';
+          else if (diffKM <= 500 && status !== 'critical') status = 'warning';
+       }
+       if (last.vencimientoFecha) {
+          const today = new Date();
+          const due = new Date(last.vencimientoFecha);
+          const diffTime = due.getTime() - today.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays <= 0) status = 'critical';
+          else if (diffDays <= 15 && status !== 'critical') status = 'warning';
+       }
+    }
+    return { ...v, maintenanceStatus: status };
+  });
+
   const syncDataFromSheet = async () => {
     if (isSyncing) return;
     setIsSyncing(true);
@@ -217,7 +249,7 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto px-6 pt-28 pb-40">
         {activeTab === 'reservas' && (
           <VehicleGrid 
-            flota={flota} 
+            flota={flotaWithStatus} 
             exchangeRate={exchangeRate} 
             reservations={reservations} 
             onAddReservation={handleNewReservation} 
@@ -228,7 +260,7 @@ const App: React.FC = () => {
         {activeTab === 'asistencia' && <SupportForm flota={flota} onSubmit={handleNewBreakdown} />}
         {activeTab === 'admin' && isAdminUnlocked && (
           <AdminPanel 
-            flota={flota} 
+            flota={flotaWithStatus} 
             setFlota={setFlota} 
             reservations={reservations} 
             setReservations={setReservations} 

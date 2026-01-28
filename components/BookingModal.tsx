@@ -6,7 +6,7 @@ import {
   X, ChevronRight, Upload, ChevronLeft, Smartphone, Copy, 
   CheckCircle2, MessageCircle, Landmark, BadgeCheck, 
   Printer, Image as ImageIcon, Wallet, Loader2,
-  Eraser, ShieldCheck, CreditCard, ArrowRight
+  Eraser, ShieldCheck, CreditCard, ArrowRight, DollarSign
 } from 'lucide-react';
 
 const SignaturePad: React.FC<{ onSave: (dataUrl: string) => void; onClear: () => void; lang: Language }> = ({ onSave, onClear, lang }) => {
@@ -242,64 +242,81 @@ const BookingModal: React.FC<{
                <div className="bg-bordeaux-950 p-6 rounded-3xl text-center shadow-2xl border-2 border-gold/20 relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-8 opacity-10"><Landmark size={80} className="text-white"/></div>
                   <p className="text-[9px] font-black text-gold uppercase tracking-[0.3em] mb-2">TOTAL A PAGAR</p>
-                  <div className="flex flex-col items-center justify-center gap-1 relative z-10">
-                     <p className="text-4xl font-robust text-white italic tracking-tighter">R$ {paymentAmountBRL.toLocaleString()}</p>
-                     <div className="h-px w-20 bg-white/20 my-1"></div>
-                     <p className="text-sm font-bold text-gray-300">Gs. {paymentAmountPYG.toLocaleString()}</p>
+                  <div className="grid grid-cols-2 gap-4 items-center justify-center relative z-10">
+                     <div className="text-center border-r border-white/10">
+                        <p className="text-[9px] font-bold text-gray-400 uppercase">REALES</p>
+                        <p className="text-3xl font-robust text-white italic tracking-tighter">R$ {paymentAmountBRL.toLocaleString()}</p>
+                     </div>
+                     <div className="text-center">
+                        <p className="text-[9px] font-bold text-gray-400 uppercase">GUARANIES</p>
+                        <p className="text-2xl font-robust text-gold italic tracking-tighter">Gs. {paymentAmountPYG.toLocaleString()}</p>
+                     </div>
                   </div>
                </div>
 
-               <div className="grid grid-cols-2 gap-4">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  {/* Santander Card */}
-                 <div className="bg-red-600 p-5 rounded-[1.5rem] text-center relative overflow-hidden group shadow-lg text-white">
-                    <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-40 transition-opacity"><Landmark size={40} /></div>
-                    <p className="text-[8px] font-black mb-1 uppercase tracking-widest opacity-80">PIX OFICIAL</p>
-                    <h4 className="text-lg font-robust italic mb-3">SANTANDER</h4>
-                    <button onClick={() => { navigator.clipboard.writeText('24510861818'); alert('PIX Copiado'); }} className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-sm p-3 rounded-xl text-[9px] font-black border border-white/20 flex items-center justify-center gap-2 transition-all">
-                       24510861818 <Copy size={12}/>
-                    </button>
+                 <div className="bg-red-600 p-5 rounded-[2rem] text-center relative overflow-hidden group shadow-lg text-white border-2 border-red-500">
+                    <div className="absolute -top-4 -right-4 bg-white/10 w-24 h-24 rounded-full"></div>
+                    <div className="relative z-10">
+                        <div className="flex items-center justify-center gap-2 mb-2">
+                            <Landmark size={18} />
+                            <h4 className="text-lg font-robust italic">SANTANDER</h4>
+                        </div>
+                        <p className="text-[9px] font-bold opacity-80 mb-3 uppercase tracking-widest">PIX OFICIAL</p>
+                        <button onClick={() => { navigator.clipboard.writeText('24510861818'); alert('PIX Copiado'); }} className="w-full bg-white text-red-600 hover:bg-gray-100 p-3 rounded-xl text-[11px] font-black flex items-center justify-center gap-2 transition-all shadow-md">
+                        24510861818 <Copy size={12}/>
+                        </button>
+                    </div>
                  </div>
                  
                  {/* Ueno Card */}
-                 <div className="bg-emerald-600 p-5 rounded-[1.5rem] text-center relative overflow-hidden group shadow-lg text-white">
-                    <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-40 transition-opacity"><CreditCard size={40} /></div>
-                    <p className="text-[8px] font-black mb-1 uppercase tracking-widest opacity-80">ALIAS BANCARIO</p>
-                    <h4 className="text-lg font-robust italic mb-3">UENO BANK</h4>
-                    <button onClick={() => { navigator.clipboard.writeText('1008110'); alert('Alias Copiado'); }} className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-sm p-3 rounded-xl text-[9px] font-black border border-white/20 flex items-center justify-center gap-2 transition-all">
-                       1008110 <Copy size={12}/>
-                    </button>
+                 <div className="bg-emerald-600 p-5 rounded-[2rem] text-center relative overflow-hidden group shadow-lg text-white border-2 border-emerald-500">
+                    <div className="absolute -top-4 -right-4 bg-white/10 w-24 h-24 rounded-full"></div>
+                    <div className="relative z-10">
+                        <div className="flex items-center justify-center gap-2 mb-2">
+                            <CreditCard size={18} />
+                            <h4 className="text-lg font-robust italic">UENO BANK</h4>
+                        </div>
+                        <p className="text-[9px] font-bold opacity-80 mb-3 uppercase tracking-widest">ALIAS BANCARIO</p>
+                        <button onClick={() => { navigator.clipboard.writeText('1008110'); alert('Alias Copiado'); }} className="w-full bg-white text-emerald-600 hover:bg-gray-100 p-3 rounded-xl text-[11px] font-black flex items-center justify-center gap-2 transition-all shadow-md">
+                        1008110 <Copy size={12}/>
+                        </button>
+                    </div>
                  </div>
                </div>
 
-               <div className="bg-gray-50 dark:bg-dark-elevated p-6 rounded-[2.5rem] border border-gray-100 dark:border-white/5 space-y-4">
+               <div className="space-y-3">
                   <div className="flex justify-between items-center px-2">
                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Comprobante de Transferencia</p>
                      {uploadSuccess && <span className="text-[9px] font-black text-green-600 uppercase flex items-center gap-1 animate-pulse"><CheckCircle2 size={12}/> Recibido</span>}
                   </div>
                   
-                  <label className={`flex flex-col items-center justify-center gap-3 w-full h-32 border-3 border-dashed rounded-[2rem] cursor-pointer transition-all duration-300 relative overflow-hidden ${
+                  <label className={`flex flex-col items-center justify-center gap-3 w-full h-32 border-4 border-dashed rounded-[2.5rem] cursor-pointer transition-all duration-300 relative overflow-hidden group ${
                      uploadSuccess 
-                     ? 'bg-green-50 border-green-200' 
+                     ? 'bg-green-50 border-green-400' 
                      : isProcessingReceipt 
                         ? 'bg-gold/5 border-gold/30' 
-                        : 'bg-white hover:bg-gray-50 border-gray-200'
+                        : 'bg-white hover:bg-gray-50 border-gray-200 hover:border-gold'
                   }`}>
                     <input type="file" className="hidden" accept="image/*" onChange={e => handleFileUpload(e, 'receipt')} />
                     
                     {isProcessingReceipt ? (
                        <div className="flex flex-col items-center animate-pulse">
-                          <Loader2 className="animate-spin text-gold mb-2" size={24} />
-                          <span className="text-[8px] font-black text-gold uppercase">Procesando...</span>
+                          <Loader2 className="animate-spin text-gold mb-2" size={32} />
+                          <span className="text-[10px] font-black text-gold uppercase">Procesando...</span>
                        </div>
                     ) : uploadSuccess ? (
                        <div className="flex flex-col items-center animate-bounce">
-                          <BadgeCheck className="text-green-500 mb-2" size={32} />
-                          <span className="text-[9px] font-black text-green-600 uppercase tracking-widest">Listo para Generar</span>
+                          <BadgeCheck className="text-green-500 mb-2" size={40} />
+                          <span className="text-[11px] font-black text-green-600 uppercase tracking-widest">Listo para Generar</span>
                        </div>
                     ) : (
-                       <div className="flex flex-col items-center text-gray-300 hover:text-bordeaux-800 transition-colors">
-                          <Upload size={28} className="mb-2" />
-                          <span className="text-[8px] font-black uppercase tracking-widest">Subir Imagen / PDF</span>
+                       <div className="flex flex-col items-center text-gray-300 group-hover:text-bordeaux-800 transition-colors">
+                          <div className="bg-gray-100 group-hover:bg-bordeaux-50 p-4 rounded-full mb-2 transition-colors">
+                             <Upload size={24} />
+                          </div>
+                          <span className="text-[9px] font-black uppercase tracking-widest">Toca para Subir Imagen</span>
                        </div>
                     )}
                   </label>
@@ -311,11 +328,11 @@ const BookingModal: React.FC<{
                   disabled={!uploadSuccess}
                   className={`w-full py-6 rounded-[2rem] font-robust text-[12px] uppercase tracking-[0.3em] shadow-xl flex items-center justify-center gap-3 transition-all transform ${
                      uploadSuccess 
-                     ? 'bg-green-600 text-white hover:scale-[1.02] hover:shadow-green-500/30 cursor-pointer' 
-                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                     ? 'bg-green-600 text-white hover:scale-[1.02] hover:shadow-green-500/30 cursor-pointer animate-slideUp' 
+                     : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
                   }`}
                >
-                  {uploadSuccess ? 'Generar Ticket y QR' : 'Adjuntar Comprobante para Finalizar'} 
+                  {uploadSuccess ? 'Finalizar Reserva' : 'Adjuntar Comprobante'} 
                   {uploadSuccess && <ArrowRight size={18} />}
                </button>
             </div>

@@ -42,38 +42,58 @@ const parseCSV = (text: string): string[][] => {
   return result;
 };
 
+// Función específica para moneda Real Brasileño (BRL)
+// Formatos comunes en Sheets: "R$ 1.500,00", "1500,00", "1.500"
 const parseSheetAmount = (val: string): number => {
   if (!val) return 0;
-  // Limpiar símbolos de moneda R$, Gs, etc
-  let clean = val.replace(/[R$Gs\s]/g, '');
   
-  // Manejo de decimales (Brasil/Paraguay usa coma)
+  let clean = val.toUpperCase().replace(/[R$\s]/g, ''); // Quitar R$ y espacios
+  
+  // Si tiene formato latino/europeo (1.200,50)
   if (clean.includes(',') && clean.includes('.')) {
-    clean = clean.replace(/\./g, '').replace(',', '.');
-  } else if (clean.includes(',')) {
-    clean = clean.replace(',', '.');
+     // Eliminar puntos de miles
+     clean = clean.replace(/\./g, '');
+     // Reemplazar coma decimal por punto
+     clean = clean.replace(',', '.');
+  } 
+  // Si solo tiene comas (1200,50)
+  else if (clean.includes(',')) {
+     clean = clean.replace(',', '.');
   }
-  
-  const num = parseFloat(clean.replace(/[^0-9.]/g, ''));
+  // Si solo tiene puntos pero parece miles (1.200 -> 1200)
+  // Regla simple: Si hay un punto y son 3 digitos despues, es mil.
+  else if (clean.includes('.') && clean.split('.')[1].length === 3) {
+     clean = clean.replace(/\./g, '');
+  }
+
+  const num = parseFloat(clean);
   return isNaN(num) ? 0 : num;
 };
 
-// Convierte fechas DD/MM/AAAA o DD-MM-AAAA a YYYY-MM-DD para compatibilidad
+// Normalizar fechas de Planilla (DD/MM/YYYY) a App (YYYY-MM-DD)
 const normalizeDate = (dateStr: string): string => {
     if (!dateStr) return '';
     
-    // Si ya es ISO (contiene guiones y empieza por año 20xx)
-    if (dateStr.match(/^20\d{2}-\d{2}-\d{2}/)) return dateStr.split(' ')[0];
-
-    const clean = dateStr.split(' ')[0]; // quitar hora si existe
-    if (clean.includes('/')) {
-        const parts = clean.split('/');
+    const clean = dateStr.trim().split(' ')[0]; // Quitar hora
+    
+    // Caso DD/MM/YYYY o DD-MM-YYYY
+    if (clean.includes('/') || clean.includes('-')) {
+        const separator = clean.includes('/') ? '/' : '-';
+        const parts = clean.split(separator);
+        
+        // Asumimos formato Paraguay/Brasil: Dia Mes Año
         if (parts.length === 3) {
-            // Asumimos DD/MM/YYYY
-            const d = parts[0].padStart(2, '0');
-            const m = parts[1].padStart(2, '0');
-            const y = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
-            return `${y}-${m}-${d}`;
+            let d = parts[0];
+            let m = parts[1];
+            let y = parts[2];
+
+            // Si el año es corto (26), convertir a 2026
+            if (y.length === 2) y = `20${y}`;
+            
+            // Si por error viene YYYY-MM-DD, devolver directo
+            if (d.length === 4) return `${d}-${m}-${y}`; 
+
+            return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
         }
     }
     return clean;
@@ -81,7 +101,6 @@ const normalizeDate = (dateStr: string): string => {
 
 export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null> => {
   const controller = new AbortController();
-  // Increased timeout to 30s and added reason
   const timeoutId = setTimeout(() => controller.abort(new Error('Connection timeout')), 30000); 
   try {
     const response = await fetch(`${GOOGLE_SHEET_RESERVATIONS_URL}&cache_bust=${Date.now()}`, {
@@ -91,7 +110,6 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
     if (!response.ok) return null;
     const csvText = await response.text();
     
-    // Validar que no sea un error de Google Login
     if (csvText.includes('<!DOCTYPE html>')) {
         console.error("Error: Google Sheet no es público o requiere login.");
         return null;
@@ -100,58 +118,59 @@ export const fetchReservationsFromSheet = async (): Promise<Reservation[] | null
     const rows = parseCSV(csvText);
     if (rows.length < 2) return [];
 
-    const headers = rows[0].map(h => h.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
+    // Normalizar headers para búsqueda flexible
+    const headers = rows[0].map(h => h.toLowerCase().trim().replace(/[^a-z0-9áéíóúñ]/g, ''));
     const dataRows = rows.slice(1);
 
     return dataRows.map((row, index): Reservation => {
       const getVal = (possibleHeaders: string[]) => {
         for (const h of possibleHeaders) {
-          const cleanH = h.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const idx = headers.indexOf(cleanH);
+          const cleanH = h.toLowerCase().replace(/[^a-z0-9áéíóúñ]/g, '');
+          // Buscar match exacto o parcial
+          const idx = headers.findIndex(header => header === cleanH || header.includes(cleanH));
           if (idx !== -1 && row[idx]) return row[idx].replace(/^"(.*)"$/, '$1').trim();
         }
         return '';
       };
 
-      const cliente = getVal(['cliente', 'nombre', 'socio', 'arrendatario', 'nombre completo']);
+      // Mapeo específico para Hoja 2026 General
+      const cliente = getVal(['cliente', 'nombre', 'socio', 'titular']);
       
-      // Columnas críticas para calendario
-      // Importante: Normalizar la fecha a YYYY-MM-DD para que el calendario la entienda
-      const salidaRaw = getVal(['inicio', 'salida', 'fecha salida', 'start', 'f. salida']);
-      const entregaRaw = getVal(['fin', 'entrega', 'fecha entrega', 'end', 'f. entrega', 'retorno']);
+      const salidaRaw = getVal(['salida', 'inicio', 'fecha salida', 'retiro']);
+      const entregaRaw = getVal(['retorno', 'llegada', 'fin', 'devolucion', 'entrega']);
       
       const inicio = normalizeDate(salidaRaw);
       const fin = normalizeDate(entregaRaw) || inicio;
 
-      const auto = getVal(['auto', 'vehiculo', 'unidad', 'modelo', 'coche']);
+      const auto = getVal(['vehiculo', 'auto', 'unidad', 'modelo']);
       
-      // Actualizado para reconocer 'tr', 't.r', 'totalbrl'
-      const totalStr = getVal(['tr', 't.r', 'total', 'monto', 'precio', 'totalbrl', 'reales', 'total r$']);
+      // CAMBIO SOLICITADO: Prioridad a Columna "T.R" o "Total Reales"
+      // Se busca específicamente encabezados que contengan 't.r' o 'tr' o 'total reales'
+      const totalStr = getVal(['t.r', 'tr', 'total reales', 'total r$']);
       
       const totalNum = parseSheetAmount(totalStr);
       
+      // Filtrar filas vacías o totales generales de la hoja
+      if (!cliente || !auto || !inicio) return null as any;
+
       return {
-        id: `CLOUD-${index}-${cliente.substring(0,3)}`,
-        cliente: cliente || 'Reserva Externa',
+        id: `CLOUD-${index}-${cliente.substring(0,3).toUpperCase()}`,
+        cliente: cliente.toUpperCase(),
         email: 'cloud@jmasociados.com', 
         ci: 'SINCRO-NUBE', 
         documentType: 'CI', 
         celular: '---',
-        auto: auto || 'Unidad No Definida', 
+        auto: auto.toUpperCase(), 
         inicio: inicio, 
         fin: fin,
         total: totalNum, 
-        status: 'Confirmed', // Asumimos confirmado si está en la hoja
+        status: 'Confirmed', 
         includeInCalendar: true
       };
-    }).filter(r => r.inicio && r.auto && r.auto !== 'Unidad No Definida');
+    }).filter(r => r && r.inicio && r.auto); // Eliminar nulos
   } catch (error: any) {
     clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      console.warn("Fetch aborted due to timeout");
-    } else {
-      console.error("Error fetching sheet:", error);
-    }
+    console.error("Error fetching sheet:", error);
     return null;
   }
 };
