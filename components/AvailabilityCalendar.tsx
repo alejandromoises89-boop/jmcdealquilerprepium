@@ -1,8 +1,7 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { Reservation } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
-import { ChevronLeft, ChevronRight, Lock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Lock, Check } from 'lucide-react';
 
 interface AvailabilityCalendarProps {
   vehicleName: string;
@@ -27,10 +26,6 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
     // Ejemplo: "Toyota Vitz Blanco" -> "toyota vitz blanco"
     const targetName = vehicleName.toLowerCase();
     
-    // Extraer palabras clave principales (e.g. "vitz", "corolla", "tucson") para búsqueda flexible
-    // Si el nombre es "Toyota Vitz Blanco", keyWords = ["toyota", "vitz", "blanco"]
-    const targetKeywords = targetName.split(' ').filter(w => w.length > 2);
-
     reservations.forEach((r) => {
       if (!r.inicio || (r.status !== 'Confirmed' && r.status !== 'Completed')) return;
       
@@ -171,16 +166,17 @@ const AvailabilityCalendar: React.FC<AvailabilityCalendarProps> = ({ vehicleName
               onClick={() => handleDateClick(day)} 
               className={`aspect-square flex flex-col items-center justify-center text-[9px] font-robust rounded-xl border transition-all relative cursor-pointer ${
                 status.isOccupied 
-                  ? 'bg-bordeaux-800 text-white border-bordeaux-900 font-black cursor-not-allowed shadow-inner' 
+                  ? 'bg-bordeaux-800 text-white border-bordeaux-900 font-black cursor-not-allowed shadow-inner opacity-90' 
                   : status.isSelectionPoint 
-                    ? 'bg-gold text-dark-base border-gold font-black scale-105 shadow-lg z-10' 
+                    ? 'bg-gold text-white border-gold font-black scale-105 shadow-lg z-10' 
                     : status.isSelectionRange 
-                      ? 'bg-gold/30 text-bordeaux-950 border-gold/40' 
-                      : 'bg-white dark:bg-dark-elevated text-gray-700 dark:text-white border-gray-50 dark:border-white/5 hover:border-gold/30'
+                      ? 'bg-gold/40 text-bordeaux-950 border-gold/50 font-bold' 
+                      : 'bg-white dark:bg-dark-elevated text-gray-700 dark:text-white border-gray-50 dark:border-white/5 hover:border-gold/30 hover:bg-gray-50'
               }`}
             >
               {day}
-              {status.isOccupied && <Lock size={8} className="absolute bottom-1 right-1 opacity-50" />}
+              {status.isOccupied && <Lock size={8} className="absolute bottom-1 right-1 opacity-70 text-white" />}
+              {status.isSelectionPoint && <Check size={8} className="absolute bottom-1 right-1 opacity-90" />}
             </div>
           );
         })}

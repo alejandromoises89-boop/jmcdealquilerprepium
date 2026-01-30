@@ -1,11 +1,11 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Vehicle, Reservation } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
 import { 
   CheckCircle2, Clock, Info, Calendar, 
   ShieldAlert, Settings2, Users, Fuel, Gauge, Zap,
-  Cpu, Award, ShieldCheck, AlertTriangle, AlertCircle
+  Cpu, Award, ShieldCheck, AlertTriangle, AlertCircle, Calculator, Wrench
 } from 'lucide-react';
 import AvailabilityCalendar from './AvailabilityCalendar';
 
@@ -22,6 +22,10 @@ const VehicleCard: React.FC<VehicleCardProps> = ({ vehicle, exchangeRate, reserv
   const [isHovered, setIsHovered] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showAvailability, setShowAvailability] = useState(false);
+  
+  // Calculator State
+  const [calcStart, setCalcStart] = useState('');
+  const [calcEnd, setCalcEnd] = useState('');
 
   const t = TRANSLATIONS[language];
   const isAvailable = vehicle.estado === 'Disponible';
@@ -30,24 +34,37 @@ const VehicleCard: React.FC<VehicleCardProps> = ({ vehicle, exchangeRate, reserv
   
   const getStatusStyle = () => {
     if (isAvailable) return {
-      badge: 'bg-emerald-500/10 text-emerald-600 border-emerald-200 dark:border-emerald-500/30',
+      badge: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30',
       icon: CheckCircle2,
       label: 'Disponible'
     };
     if (isRented) return {
-      badge: 'bg-gold/10 text-gold border-gold/20',
+      badge: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30',
       icon: Clock,
       label: 'En Alquiler'
     };
     return {
-      badge: 'bg-rose-500/10 text-rose-600 border-rose-200 dark:border-rose-500/30',
-      icon: ShieldAlert,
+      badge: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/30',
+      icon: Wrench,
       label: 'En Taller'
     };
   };
 
   const statusStyle = getStatusStyle();
   const StatusIcon = statusStyle.icon;
+
+  const estimatedCost = useMemo(() => {
+    if (!calcStart || !calcEnd) return null;
+    const s = new Date(calcStart);
+    const e = new Date(calcEnd);
+    const diffTime = Math.abs(e.getTime() - s.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+    if (diffDays < 1) return null;
+    
+    const totalBRL = diffDays * vehicle.precio;
+    const totalPYG = totalBRL * exchangeRate;
+    return { days: diffDays, brl: totalBRL, pyg: totalPYG };
+  }, [calcStart, calcEnd, vehicle.precio, exchangeRate]);
 
   return (
     <div 
@@ -69,15 +86,23 @@ const VehicleCard: React.FC<VehicleCardProps> = ({ vehicle, exchangeRate, reserv
             {statusStyle.label}
           </div>
           
-          {/* Mantenimiento Alert Badge */}
+          {/* Mantenimiento Alert Badge - Improved Visibility */}
           {vehicle.maintenanceStatus === 'critical' && (
              <div className="px-5 py-2 rounded-2xl text-[9px] font-robust border bg-red-600 text-white border-red-500 backdrop-blur-md flex items-center gap-3 uppercase tracking-[0.2em] shadow-xl animate-pulse">
-                <AlertTriangle size={14} /> MANT. VENCIDO
+                <AlertTriangle size={14} className="fill-white/20" /> 
+                <span>
+                  {vehicle.maintenanceKMLeft !== undefined && vehicle.maintenanceKMLeft <= 300 ? `${vehicle.maintenanceKMLeft} KM RESTANTES` : 
+                   vehicle.maintenanceDaysLeft !== undefined && vehicle.maintenanceDaysLeft <= 5 ? `${vehicle.maintenanceDaysLeft} DÍAS RESTANTES` : "MANT. URGENTE"}
+                </span>
              </div>
           )}
           {vehicle.maintenanceStatus === 'warning' && (
-             <div className="px-5 py-2 rounded-2xl text-[9px] font-robust border bg-gold text-white border-gold backdrop-blur-md flex items-center gap-3 uppercase tracking-[0.2em] shadow-xl">
-                <AlertCircle size={14} /> MANT. PRÓXIMO
+             <div className="px-5 py-2 rounded-2xl text-[9px] font-robust border bg-gold text-white border-yellow-500 backdrop-blur-md flex items-center gap-3 uppercase tracking-[0.2em] shadow-xl">
+                <AlertCircle size={14} className="fill-white/20" />
+                <span>
+                  {vehicle.maintenanceKMLeft !== undefined && vehicle.maintenanceKMLeft <= 1000 ? `${vehicle.maintenanceKMLeft} KM PRÓXIMOS` : 
+                   vehicle.maintenanceDaysLeft !== undefined && vehicle.maintenanceDaysLeft <= 15 ? `${vehicle.maintenanceDaysLeft} DÍAS PRÓXIMOS` : "MANT. PRÓXIMO"}
+                </span>
              </div>
           )}
         </div>
@@ -150,7 +175,7 @@ const VehicleCard: React.FC<VehicleCardProps> = ({ vehicle, exchangeRate, reserv
         
         {/* DETALLES EXPANDIBLES (DISEÑO PREMIUM CARD) */}
         {showDetails && (
-          <div className="space-y-6 animate-fadeIn bg-gradient-to-br from-gray-50 to-white dark:from-dark-elevated dark:to-dark-base p-8 rounded-[3rem] border-2 dark:border-white/5 relative overflow-hidden group/details shadow-inner">
+          <div className="space-y-6 animate-fadeIn bg-gradient-to-br from-gray-50 to-white dark:from-dark-elevated dark:to-dark-base p-8 rounded-[3rem] border-2 dark:border-white/5 relative overflow-hidden group/details shadow-inner" onClick={(e) => e.stopPropagation()}>
              <ShieldCheck size={120} className="absolute -bottom-10 -right-10 text-gold/5 group-hover/details:scale-110 transition-transform" />
              
              <div className="relative z-10">
@@ -181,6 +206,27 @@ const VehicleCard: React.FC<VehicleCardProps> = ({ vehicle, exchangeRate, reserv
                         <span key={i} className="text-[8px] font-bold uppercase bg-white dark:bg-black/20 px-3 py-1 rounded-lg border border-gray-100 dark:border-white/5 text-gray-500 shadow-sm">{s}</span>
                       ))}
                    </div>
+                </div>
+
+                {/* CALCULADORA DE PRECIO */}
+                <div className="mt-8 bg-bordeaux-950/5 dark:bg-white/5 rounded-3xl p-6 border border-gold/10">
+                   <h4 className="text-[9px] font-black text-bordeaux-800 dark:text-gold uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><Calculator size={14}/> Simulador de Costo</h4>
+                   <div className="grid grid-cols-2 gap-3 mb-4">
+                      <div><p className="text-[7px] font-bold uppercase text-gray-400 mb-1">Inicio</p><input type="date" value={calcStart} onChange={e => setCalcStart(e.target.value)} className="w-full bg-white dark:bg-dark-base rounded-xl px-3 py-2 text-[10px] font-bold border-0 outline-none shadow-sm" /></div>
+                      <div><p className="text-[7px] font-bold uppercase text-gray-400 mb-1">Fin</p><input type="date" value={calcEnd} onChange={e => setCalcEnd(e.target.value)} className="w-full bg-white dark:bg-dark-base rounded-xl px-3 py-2 text-[10px] font-bold border-0 outline-none shadow-sm" /></div>
+                   </div>
+                   {estimatedCost ? (
+                      <div className="bg-white dark:bg-dark-elevated rounded-2xl p-4 text-center shadow-lg border border-gold/20">
+                         <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">{estimatedCost.days} Días Estimados</p>
+                         <div className="flex justify-center items-center gap-4">
+                            <div><p className="text-[12px] font-robust text-bordeaux-950 dark:text-white italic">R$ {estimatedCost.brl}</p></div>
+                            <div className="w-px h-6 bg-gray-200 dark:bg-white/10"></div>
+                            <div><p className="text-[12px] font-robust text-gold italic">Gs. {estimatedCost.pyg.toLocaleString()}</p></div>
+                         </div>
+                      </div>
+                   ) : (
+                      <div className="text-center py-2"><p className="text-[8px] font-bold text-gray-400 italic">Seleccione fechas para calcular</p></div>
+                   )}
                 </div>
              </div>
           </div>

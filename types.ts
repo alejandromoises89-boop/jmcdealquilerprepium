@@ -74,7 +74,9 @@ export interface Vehicle {
   lastLat?: number;
   lastLng?: number;
   // Propiedad calculada para alertas de UI
-  maintenanceStatus?: 'ok' | 'warning' | 'critical'; 
+  maintenanceStatus?: 'ok' | 'warning' | 'critical';
+  maintenanceKMLeft?: number;
+  maintenanceDaysLeft?: number;
 }
 
 export interface Reservation {
@@ -95,6 +97,7 @@ export interface Reservation {
   includeInCalendar?: boolean;
   contractAccepted?: boolean;
   obs?: string; // Nuevo campo para notas de cambios
+  contractUrl?: string; // URL o Base64 del contrato subido manualmente
 }
 
 export interface Gasto {

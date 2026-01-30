@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Vehicle, Reservation, Gasto, Breakdown, MaintenanceRecord, ExpirationRecord } from './types';
 import { INITIAL_FLOTA, Language } from './constants';
@@ -88,12 +87,12 @@ const App: React.FC = () => {
   // CALCULO DINAMICO DE ESTADO DE MANTENIMIENTO
   const flotaWithStatus = flota.map(v => {
     let status: 'ok' | 'warning' | 'critical' = 'ok';
+    let kmLeft: number | undefined = undefined;
+    let daysLeft: number | undefined = undefined;
     
     // 1. Chequeo por mantenimientoKM propiedad del vehículo
     if (v.mantenimientoKM) {
-       const diff = v.mantenimientoKM - v.kilometrajeActual;
-       if (diff <= 0) status = 'critical';
-       else if (diff <= 1000) status = 'warning'; // 1000km aviso
+       kmLeft = v.mantenimientoKM - v.kilometrajeActual;
     }
 
     // 2. Chequeo por último registro de taller
@@ -101,20 +100,31 @@ const App: React.FC = () => {
     if (logs.length > 0) {
        const last = logs.sort((a,b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
        if (last.vencimientoKM) {
-          const diffKM = last.vencimientoKM - v.kilometrajeActual;
-          if (diffKM <= 0) status = 'critical';
-          else if (diffKM <= 500 && status !== 'critical') status = 'warning';
+          const calculatedKmLeft = last.vencimientoKM - v.kilometrajeActual;
+          if (kmLeft === undefined || calculatedKmLeft < kmLeft) {
+             kmLeft = calculatedKmLeft;
+          }
        }
        if (last.vencimientoFecha) {
           const today = new Date();
           const due = new Date(last.vencimientoFecha);
           const diffTime = due.getTime() - today.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          if (diffDays <= 0) status = 'critical';
-          else if (diffDays <= 15 && status !== 'critical') status = 'warning';
+          daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
        }
     }
-    return { ...v, maintenanceStatus: status };
+
+    // Thresholds: Critical (300km / 5 days), Warning (1000km / 15 days)
+    if (kmLeft !== undefined) {
+       if (kmLeft <= 300) status = 'critical';
+       else if (kmLeft <= 1000) status = 'warning';
+    }
+    
+    if (daysLeft !== undefined) {
+       if (daysLeft <= 5) status = 'critical';
+       else if (daysLeft <= 15 && status !== 'critical') status = 'warning';
+    }
+
+    return { ...v, maintenanceStatus: status, maintenanceKMLeft: kmLeft, maintenanceDaysLeft: daysLeft };
   });
 
   const syncDataFromSheet = async () => {

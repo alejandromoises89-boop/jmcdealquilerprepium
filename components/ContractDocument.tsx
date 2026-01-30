@@ -1,7 +1,6 @@
-
 import React from 'react';
 import { Vehicle, Reservation } from '../types';
-import { FileText, Printer, Download, ShieldCheck } from 'lucide-react';
+import { FileText, Printer, ShieldCheck } from 'lucide-react';
 
 interface ContractDocumentProps {
   vehicle: Vehicle;
@@ -19,7 +18,7 @@ const ContractDocument: React.FC<ContractDocumentProps> = ({ vehicle, data, days
   };
 
   return (
-    <div className="bg-white p-6 md:p-12 shadow-2xl rounded-[2.5rem] border border-gray-100 max-w-5xl mx-auto font-sans text-[11px] leading-relaxed text-gray-800 print:shadow-none print:border-none print:p-0">
+    <div className="bg-white p-6 md:p-12 shadow-2xl rounded-[2.5rem] border border-gray-100 max-w-5xl mx-auto font-sans text-[11px] leading-relaxed text-gray-800 print:shadow-none print:border-none print:p-0 print:m-0 print:w-full print:max-w-none">
       <div className="flex justify-between items-center mb-8 print:hidden">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-bordeaux-50 rounded-xl flex items-center justify-center text-bordeaux-800">
@@ -38,92 +37,109 @@ const ContractDocument: React.FC<ContractDocumentProps> = ({ vehicle, data, days
         </button>
       </div>
 
-      <div id="printable-contract" className="space-y-6 bg-gray-50/30 p-8 rounded-[2rem] border border-gray-100 print:bg-white print:p-0 print:border-none">
-        <div className="text-center space-y-2 border-b-2 border-bordeaux-800 pb-6 mb-8">
-          <h1 className="text-xl font-black text-bordeaux-950 uppercase tracking-tight">CONTRATO DE ALQUILER DE VEHÍCULO Y AUTORIZACIÓN PARA CONDUCIR</h1>
+      <div id="printable-contract" className="space-y-6 bg-white p-8 rounded-[2rem] border border-gray-100 print:bg-white print:p-0 print:border-none print:space-y-4">
+        {/* Header Contract */}
+        <div className="text-center border-b-2 border-bordeaux-800 pb-6 mb-8 print:mb-4 print:pb-4">
+           <img src="https://i.ibb.co/PzsvxYrM/JM-Asociados-Logotipo-02.png" className="h-16 mx-auto mb-4 opacity-80" alt="JM Logo" />
+           <h1 className="text-xl font-black text-bordeaux-950 uppercase tracking-tight">CONTRATO DE ALQUILER DE VEHÍCULO</h1>
+           <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Protocolo de Arrendamiento - Versión 2026</p>
         </div>
 
-        <div className="space-y-4">
-          <p className="font-bold">Entre:</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white p-6 rounded-2xl border border-gray-100">
-            <div className="space-y-2">
-              <p className="font-black uppercase text-[9px] text-gold tracking-widest">ARRENDADOR:</p>
-              <p><b>Nombre:</b> J&M ASOCIADOS</p>
-              <p><b>Cédula de Identidad:</b> 1.702.076-0</p>
-              <p><b>Domicilio:</b> CURUPAYTU ESQUINA FARID RAHAL</p>
-              <p><b>Teléfono:</b> +595983635573</p>
+        {/* Parties */}
+        <div className="grid grid-cols-2 gap-8 mb-6 print:gap-4 print:mb-4">
+            <div className="bg-gray-50/50 p-4 rounded-xl border border-gray-200 print:border print:bg-transparent">
+              <h3 className="font-black uppercase text-[9px] text-gold tracking-widest mb-3 border-b border-gray-200 pb-1">ARRENDADOR</h3>
+              <div className="space-y-1 text-[10px]">
+                <p><b>Razón Social:</b> J&M ASOCIADOS</p>
+                <p><b>RUC / CI:</b> 1.702.076-0</p>
+                <p><b>Dirección:</b> CURUPAYTU ESQUINA FARID RAHAL</p>
+                <p><b>Ciudad:</b> CIUDAD DEL ESTE, PY</p>
+                <p><b>Contacto:</b> +595 983 635 573</p>
+              </div>
             </div>
-            <div className="space-y-2">
-              <p className="font-black uppercase text-[9px] text-gold tracking-widest">ARRENDATARIO:</p>
-              <p><b>Nombre:</b> <span className="uppercase font-bold">{data.cliente || '________________________'}</span></p>
-              <p><b>Cédula de Identidad / RG:</b> {data.ci || '________________________'}</p>
-              <p><b>Domicilio:</b> {data.ci?.includes('RG') ? 'BRASIL' : 'PARAGUAY'}</p>
-              <p><b>Teléfono:</b> {data.celular || '________________________'}</p>
+            <div className="bg-gray-50/50 p-4 rounded-xl border border-gray-200 print:border print:bg-transparent">
+              <h3 className="font-black uppercase text-[9px] text-gold tracking-widest mb-3 border-b border-gray-200 pb-1">ARRENDATARIO</h3>
+              <div className="space-y-1 text-[10px]">
+                <p><b>Nombre:</b> <span className="uppercase font-bold">{data.cliente || '________________________'}</span></p>
+                <p><b>Documento (CI/RG):</b> {data.ci || '________________________'}</p>
+                <p><b>Nacionalidad:</b> {data.ci?.includes('RG') ? 'BRASILEÑA' : 'PARAGUAYA'}</p>
+                <p><b>Teléfono:</b> {data.celular || '________________________'}</p>
+                <p><b>Domicilio:</b> ________________________</p>
+              </div>
+            </div>
+        </div>
+
+        {/* Vehicle Info */}
+        <div className="bg-bordeaux-50/30 p-4 rounded-xl border border-bordeaux-100 print:border-gray-300 print:bg-transparent">
+           <h3 className="font-black uppercase text-[9px] text-bordeaux-800 tracking-widest mb-3 border-b border-bordeaux-200 pb-1">UNIDAD ARRENDADA</h3>
+           <div className="grid grid-cols-4 gap-4 text-[10px] print:grid-cols-4">
+              <div><span className="block text-gray-400 text-[8px] uppercase">Vehículo</span><span className="font-bold">{vehicle.nombre}</span></div>
+              <div><span className="block text-gray-400 text-[8px] uppercase">Matrícula</span><span className="font-bold">{vehicle.placa}</span></div>
+              <div><span className="block text-gray-400 text-[8px] uppercase">Color</span><span className="font-bold">{vehicle.color}</span></div>
+              <div><span className="block text-gray-400 text-[8px] uppercase">Kilometraje Salida</span><span className="font-bold">{vehicle.kilometrajeActual} KM</span></div>
+           </div>
+        </div>
+
+        {/* Clauses */}
+        <div className="text-justify leading-relaxed space-y-3 text-[10px] print:text-[9px]">
+          <p><b>PRIMERA - Objeto y Estado:</b> El Arrendador entrega al Arrendatario el vehículo descrito en perfecto estado de funcionamiento, limpieza y conservación. El Arrendatario declara haberlo inspeccionado y recibirlo a su entera satisfacción.</p>
+
+          <p><b>SEGUNDA - Vigencia:</b> El alquiler tendrá una duración de <b>{days} DÍAS</b>, desde el <b>{data.inicio?.split(' ')[0]}</b> hasta el <b>{data.fin?.split(' ')[0]}</b>. La no devolución en fecha y hora pactada generará multas automáticas.</p>
+
+          <p><b>TERCERA - Valor y Pago:</b> El precio total pactado es de <b>R$ {data.total}</b>. El pago se realiza por adelantado. En caso de extensión, se deberá abonar la diferencia antes del nuevo periodo.</p>
+
+          <p><b>CUARTA - Responsabilidad:</b> El Arrendatario asume plena responsabilidad CIVIL y PENAL por el uso del vehículo, así como por cualquier infracción de tránsito o siniestro ocurrido durante la vigencia del contrato.</p>
+
+          <p><b>QUINTA - Franquicia:</b> Se establece una franquicia (deducible) de Gs. 5.000.000 en caso de siniestro, a cargo exclusivo del Arrendatario.</p>
+
+          <p><b>SEXTA - Jurisdicción:</b> Las partes se someten a la jurisdicción de los tribunales de Ciudad del Este para cualquier controversia derivada de este contrato.</p>
+        </div>
+
+        {/* Signatures */}
+        <div className="pt-12 mt-4 grid grid-cols-2 gap-20 print:pt-8 print:gap-12">
+          <div className="text-center space-y-4">
+            <div className="h-24 border-b border-gray-300 flex items-end justify-center pb-2">
+               <span className="font-script text-2xl text-gray-400">J&M Asociados</span>
+            </div>
+            <div className="space-y-1">
+               <p className="font-black text-bordeaux-950 uppercase tracking-widest text-[9px]">POR LA EMPRESA</p>
+               <p className="text-[8px] text-gray-400 uppercase">Firma Autorizada y Sello</p>
             </div>
           </div>
-        </div>
-
-        <div className="space-y-4 text-justify leading-relaxed">
-          <p>Se acuerda lo siguiente:</p>
           
-          <p><b>PRIMERA - Objeto del Contrato.</b> El arrendador otorga en alquiler al arrendatario el siguiente vehículo:
-            <br/>* Marca: <b>{vehicle.nombre.split(' ')[0]}</b>. 
-            <br/>* Modelo: <b>{vehicle.nombre.split(' ').slice(1).join(' ')}</b>.
-            <br/>* Color: <b>{vehicle.color || 'SEGÚN REGISTRO'}</b>.
-            <br/>* Número de CHAPA: <b>{vehicle.placa}</b>.
-          </p>
-          <p>El vehículo se encuentra en perfecto estado de funcionamiento y libre de cargas o gravámenes. El arrendatario confirma la recepción del vehículo en buen estado, tras realizar una inspección visual y técnica con soporte Técnico VIDEO del Vehículo. <b>EL ARRENDADOR AUTORIZA AL ARRENDATARIO A CONDUCIR EL VEHÍCULO EN TODO EL TERRITORIO PARAGUAYO Y EL MERCOSUR.</b></p>
-
-          <p><b>SEGUNDA - Duración del Contrato.</b> El presente contrato tendrá una duración de <b>{days} ({days === 1 ? 'UN' : days === 2 ? 'DOS' : days === 3 ? 'TRES' : days}) DÍAS</b>, comenzando el {data.inicio?.split(' ')[0] || '___/___/___'} y finalizando el {data.fin?.split(' ')[0] || '___/___/___'}, salvo que se acuerde otra cosa por ambas partes mediante una extensión o terminación anticipada.</p>
-
-          <p><b>TERCERA - Precio y Forma de Pago.</b> El arrendatario se compromete a pagar al arrendador la cantidad de R$ {vehicle.precio} (o su equivalente en Guaraníes bajo <b>Cotización Oficial DNIT del Ministerio de Hacienda</b> Gs. {totalPYG.toLocaleString()}) por cada día de alquiler. <b>TOTAL DEL CONTRATO: R$ {data.total}</b>. El pago se realizará por adelantado mediante Efectivo o Transferencia Electrónica.</p>
-
-          <p><b>CUARTA - Depósito de Seguridad.</b> El arrendatario pagará cinco millones de guaraníes (Gs. 5.000.000) en caso de siniestro (accidente) para cubrir los daños al vehículo durante el periodo de alquiler.</p>
-
-          <p><b>QUINTA - Condiciones de Uso.</b> 1. El vehículo será utilizado exclusivamente para fines personales. 2. El ARRENDATARIO es responsable PENAL y CIVIL, de todo lo ocurrido dentro del vehículo y/o encontrado durante el alquiler. 3. El arrendatario se compromete a no subarrendar el vehículo ni permitir que terceros lo conduzcan sin autorización.</p>
-
-          <p><b>SEXTA - Kilometraje.</b> El alquiler incluye un límite de 200 kilómetros por día. En caso de superar este límite, el arrendatario pagará 100.000 guaraníes adicionales por los kilómetros excedentes.</p>
-
-          <p><b>SÉPTIMA - Seguro.</b> El vehículo cuenta con seguro básico de Responsabilidad CIVIL, cobertura en accidentes y rastreo satelital. El arrendatario será responsable de los daños no cubiertos por negligencia.</p>
-
-          <p><b>OCTAVA - Mantenimiento.</b> El arrendatario se compromete a mantener el vehículo en buen estado (Agua, combustible, limpieza). Las reparaciones por uso indebido serán responsabilidad del arrendatario.</p>
-
-          <p><b>NOVENA - Devolución.</b> El arrendatario devolverá el vehículo en la misma condición recibida. Retrasos incurrirán en penalizaciones de media o una diaria completa.</p>
-
-          <p><b>DÉCIMA - Jurisdicción.</b> Para cualquier disputa, las partes se someten a la jurisdicción de los tribunales del Alto Paraná, Paraguay.</p>
-        </div>
-
-        <div className="pt-16 grid grid-cols-2 gap-20">
           <div className="text-center space-y-4">
-            <div className="h-24 border-b border-gray-200 flex items-end justify-center pb-2">
-               <img src="https://i.ibb.co/PzsvxYrM/JM-Asociados-Logotipo-02.png" className="h-14 opacity-20 grayscale" alt="Sello JM" />
-            </div>
-            <p className="font-black text-bordeaux-950 uppercase tracking-widest text-[9px]">J&M ASOCIADOS</p>
-            <p className="text-[8px] font-bold text-gray-400 uppercase">Arrendador</p>
-          </div>
-          <div className="text-center space-y-4">
-            <div className="h-24 border-b border-gray-200 flex items-center justify-center italic text-bordeaux-800 font-serif text-lg">
+            <div className={`h-24 flex items-center justify-center relative overflow-hidden ${
+              signature 
+                ? 'bg-white' 
+                : 'border-b border-gray-300'
+            }`}>
               {signature ? (
-                <div className="flex flex-col items-center">
-                  <span className="text-bordeaux-800 font-serif mb-1">{signature}</span>
-                  <ShieldCheck size={16} className="text-green-500" />
+                <div className="w-full h-full relative flex items-center justify-center">
+                  <div className="absolute inset-0 opacity-[0.05] print:opacity-[0.1]" 
+                       style={{ backgroundImage: 'radial-gradient(#000 0.5px, transparent 0.5px)', backgroundSize: '4px 4px' }}>
+                  </div>
+                  <img src={signature} alt="Firma" className="max-h-full max-w-full object-contain filter contrast-125 relative z-10" />
+                  <div className="absolute bottom-0 right-0">
+                     <span className="text-[6px] font-mono text-gray-400 uppercase">DIGITAL ID: {Math.random().toString(36).substr(2, 9).toUpperCase()}</span>
+                  </div>
                 </div>
               ) : (
-                <span className="text-gray-200">Firma Digital del Arrendatario</span>
+                <span className="text-gray-300 italic">Firma del Cliente</span>
               )}
             </div>
-            <p className="font-black text-bordeaux-950 uppercase tracking-widest text-[9px]">{data.cliente || 'CLIENTE'}</p>
-            <p className="text-[8px] font-bold text-gray-400 uppercase">Arrendatario</p>
+            <div className="space-y-1">
+               <p className="font-black text-bordeaux-950 uppercase tracking-widest text-[9px]">{data.cliente || 'EL CLIENTE'}</p>
+               <p className="text-[8px] text-gray-400 uppercase">Aceptación Plena de Términos</p>
+            </div>
           </div>
         </div>
 
-        <div className="mt-8 p-4 bg-gray-50 rounded-xl border border-gray-100 text-[9px] text-gray-400 italic">
-          * Todas las conversiones monetarias de este contrato se rigen estrictamente por los valores de referencia de la Dirección Nacional de Ingresos Tributarios (DNIT) de la República del Paraguay.
+        {/* Footer for Print */}
+        <div className="pt-8 mt-8 border-t border-gray-100 flex justify-between items-center text-[8px] text-gray-400 uppercase font-bold tracking-widest print:pt-4 print:mt-4">
+           <span>DOC. REF: {data.id}</span>
+           <span>Página 1 de 1</span>
+           <span>Generado: {new Date().toLocaleString()}</span>
         </div>
-
-        <p className="text-[8px] text-center text-gray-400 pt-10 uppercase font-bold tracking-[0.2em]">
-          Contrato generado digitalmente bajo normativa DNIT en Ciudad del Este, Paraguay a los {todayDate}.
-        </p>
       </div>
     </div>
   );
