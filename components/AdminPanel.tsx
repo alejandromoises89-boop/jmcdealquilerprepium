@@ -1,803 +1,692 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { Vehicle, Reservation, Gasto, MaintenanceRecord, ExpirationRecord, ChecklistLog, InspectionItem } from '../types';
+import React, { useState, useMemo } from 'react';
+import { Vehicle, Reservation, Gasto, MaintenanceRecord, ExpirationRecord, MaintenanceThresholds, ChecklistLog, InspectionItem } from '../types';
+// Added Banknote to the imports from lucide-react
 import { 
-  Landmark, FileText, Wrench, Plus, Trash2, Printer, 
-  CheckCircle2, AlertTriangle, UserPlus, Download, TrendingUp, TrendingDown,
-  ArrowRight, PieChart as PieChartIcon, BarChart3, ClipboardList, 
-  Car, ShieldCheck, Edit3, X, Settings, Bell,
-  Sparkles, Bot, Video, Globe, Loader2, Image as ImageIcon,
-  Save, FileSignature, Camera, Send, History, Filter, AlertOctagon, Clock, Upload, Search, ChevronLeft, ChevronDown, Calendar, DollarSign,
-  Gauge, Fuel, PenTool, LayoutGrid, List, Users, Zap,
-  ArrowUpRight, ArrowDownLeft, Wallet, CalendarDays, Check
+  Landmark, FileText, Wrench, Plus, Trash2, Search, 
+  Car, ShieldCheck, Edit3, Bell, Check,
+  Calendar, History, CheckCircle, TrendingUp, 
+  Settings2, BadgeCheck, ClipboardCheck, X,
+  ArrowUpRight, ArrowDownLeft, Info, AlertCircle, Zap,
+  Save, Image as ImageIcon, Layers, Activity, Gauge, Filter, Eye,
+  Banknote
 } from 'lucide-react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
-import { GoogleGenAI } from "@google/genai";
-
-const COLORS = ['#10b981', '#ef4444', '#d97706', '#881337', '#3b82f6'];
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
 
 interface AdminPanelProps {
   flota: Vehicle[];
   setFlota: (flota: Vehicle[]) => void;
   reservations: Reservation[];
   setReservations: (res: Reservation[]) => void;
-  onDeleteReservation?: (id: string) => void;
   gastos: Gasto[];
   setGastos: (gastos: Gasto[]) => void;
   mantenimientos: MaintenanceRecord[];
   setMantenimientos: (records: MaintenanceRecord[]) => void;
   vencimientos: ExpirationRecord[];
   setVencimientos: (records: ExpirationRecord[]) => void;
+  checklists: ChecklistLog[];
+  setChecklists: (logs: ChecklistLog[]) => void;
+  thresholds: MaintenanceThresholds;
+  setThresholds: (t: MaintenanceThresholds) => void;
   exchangeRate: number;
   language?: string;
-  onSyncSheet?: () => void;
-  isSyncing?: boolean;
-  breakdowns?: any[];
-  setBreakdowns?: (b: any[]) => void;
-  onAddReservation?: (res: Reservation) => void;
 }
 
-interface ChatMessage {
-  role: 'user' | 'model';
-  text: string;
-  sources?: { uri: string; title: string }[];
-  isError?: boolean;
-}
+const COLORS = ['#800000', '#D4AF37', '#1a1a1a', '#4a0606', '#d4c59f'];
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ 
-  flota = [], setFlota, reservations = [], setReservations, onDeleteReservation, 
+  flota = [], setFlota, reservations = [], setReservations, 
   exchangeRate, gastos = [], setGastos, mantenimientos = [], setMantenimientos, 
-  vencimientos = [], setVencimientos, onAddReservation,
-  isSyncing
+  vencimientos = [], setVencimientos, thresholds, setThresholds, checklists = [], setChecklists
 }) => {
-  const [activeTab, setActiveTab] = useState<'finanzas' | 'contratos' | 'flota' | 'taller' | 'checklists' | 'ai_studio' | 'vencimientos'>('finanzas');
-  
-  // FINANZAS STATE
-  const [finanzasFilter, setFinanzasFilter] = useState({ start: '', end: '', vehicle: '' });
-  const [showAddExpense, setShowAddExpense] = useState(false);
-  const [newExpense, setNewExpense] = useState<{ concepto: string; monto: number; currency: 'BRL' | 'GS'; categoria: string; vehicleId: string; fecha: string }>({
-    concepto: '', monto: 0, currency: 'BRL', categoria: 'Operativo', vehicleId: '', fecha: new Date().toISOString().split('T')[0]
-  });
-
-  // CONTRATOS STATE
-  const [contractFilters, setContractFilters] = useState({
-    status: 'All',
-    startDate: '',
-    endDate: '',
-    clientName: '',
-    vehicleName: ''
-  });
-  const [showManualBooking, setShowManualBooking] = useState(false);
-  const [isSavingManual, setIsSavingManual] = useState(false);
-  const [manualRes, setManualRes] = useState({ 
-    cliente: '', auto: '', inicio: '', fin: '', total: 0, 
-    horaIni: '08:00', horaFin: '17:00' 
-  });
-  const [manualContractFile, setManualContractFile] = useState<string | null>(null);
-  const [viewingContract, setViewingContract] = useState<Reservation | null>(null);
-  const [managingRes, setManagingRes] = useState<Reservation | null>(null);
-  const [editingReservation, setEditingReservation] = useState<Reservation | null>(null);
-  const [manageMode, setManageMode] = useState<'swap' | 'cancel'>('swap');
-  const [swapVehicleId, setSwapVehicleId] = useState('');
-  const [manualSwapValues, setManualSwapValues] = useState({ newTotal: 0, diff: 0 });
-  const [manualCancelValues, setManualCancelValues] = useState({ penalty: 0, refund: 0 });
-  const [customObs, setCustomObs] = useState('');
-
-  // FLOTA STATE
-  const [fleetFilter, setFleetFilter] = useState({ search: '', status: 'All', type: 'All' });
-  const [showAddVehicle, setShowAddVehicle] = useState(false);
+  const [activeTab, setActiveTab] = useState<'finanzas' | 'contratos' | 'flota' | 'taller' | 'vencimientos' | 'inspecciones'>('flota');
+  const [fleetFilter, setFleetFilter] = useState('');
+  const [showThresholdConfig, setShowThresholdConfig] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
-  const [newVehicle, setNewVehicle] = useState<Partial<Vehicle>>({
-    nombre: '', precio: 0, placa: '', color: '', kilometrajeActual: 0,
-    transmision: 'Automático', combustible: 'Nafta', asientos: 5, tipo: 'Compacto',
-    img: '', specs: []
-  });
-  const [tempSpec, setTempSpec] = useState('');
-
-  // TALLER STATE
-  const [showAddMaintenance, setShowAddMaintenance] = useState(false);
-  const [expandedMaintenance, setExpandedMaintenance] = useState<Record<string, boolean>>({});
-  const [newMaintenance, setNewMaintenance] = useState<Partial<MaintenanceRecord> & { kmAnterior: number, currency: 'BRL' | 'GS' }>({
-    vehicleId: '', descripcion: '', monto: 0, tipo: 'Preventivo', 
-    kilometraje: 0, kmAnterior: 0, vencimientoKM: 0, currency: 'BRL',
-    realizado: true, images: []
+  
+  // Filtros Finanzas
+  const [finanzasFilterVehicle, setFinanzasFilterVehicle] = useState('all');
+  const [dateRange, setDateRange] = useState({ 
+    start: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0], 
+    end: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0] 
   });
 
-  // CHECKLIST STATE
-  const [showNewChecklist, setShowNewChecklist] = useState<string | null>(null);
-  const [checklistType, setChecklistType] = useState<'Check-In' | 'Check-Out'>('Check-In');
-  const [currentChecklist, setCurrentChecklist] = useState<Partial<ChecklistLog>>({
-    responsable: '', kilometraje: 0, combustible: 'Full', observacionesGlobales: '',
-    exterior: [{ label: 'Chapa y Pintura', status: 'ok' }, { label: 'Neumáticos', status: 'ok' }, { label: 'Luces / Faros', status: 'ok' }, { label: 'Espejos', status: 'ok' }, { label: 'Cristales', status: 'ok' }],
-    interior: [{ label: 'Tapicería', status: 'ok' }, { label: 'Tablero / Instrumentos', status: 'ok' }, { label: 'Aire Acondicionado', status: 'ok' }, { label: 'Limpieza', status: 'ok' }, { label: 'Gato / Herramientas', status: 'ok' }],
-    mecanica: [{ label: 'Niveles (Aceite/Agua)', status: 'ok' }, { label: 'Frenos', status: 'ok' }, { label: 'Batería', status: 'ok' }],
-    documentacion: [{ label: 'Habilitación Municipal', status: 'ok' }, { label: 'Cédula Verde', status: 'ok' }, { label: 'Seguro Mapfre', status: 'ok' }]
-  });
-
-  // AI & VENCIMIENTOS STATE
-  const [aiTab, setAiTab] = useState<'chat' | 'veo'>('chat');
-  const [chatInput, setChatInput] = useState('');
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [isChatLoading, setIsChatLoading] = useState(false);
-  const [groundingMode, setGroundingMode] = useState<'none' | 'search' | 'maps'>('none');
-  const [veoPrompt, setVeoPrompt] = useState('');
-  const [veoImage, setVeoImage] = useState<string | null>(null);
-  const [veoAspectRatio, setVeoAspectRatio] = useState<'16:9' | '9:16'>('16:9');
-  const [isVeoGenerating, setIsVeoGenerating] = useState(false);
-  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
-  const [newExpiration, setNewExpiration] = useState<Partial<ExpirationRecord>>({
-    tipo: 'Seguro', monto: 0, vencimiento: '', vehicleId: '', pagado: false
-  });
-  const [showAddExpiration, setShowAddExpiration] = useState(false);
-
-  const exportToCSV = (data: any[], fileName: string) => {
-    if (!data || !data.length) return;
-    const headers = Object.keys(data[0]).join(',');
-    const rows = data.map(obj => 
-      Object.values(obj).map(val => {
-        const clean = String(val).replace(/"/g, '""');
-        return `"${clean}"`;
-      }).join(',')
-    );
-    const csvContent = "data:text/csv;charset=utf-8,\ufeff" + [headers, ...rows].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `${fileName}_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // Effects
-  useEffect(() => {
-    if (newMaintenance.vehicleId) {
-      const v = flota.find(f => f.id === newMaintenance.vehicleId);
-      if (v) {
-        setNewMaintenance(prev => ({
-          ...prev, 
-          vehicleName: v.nombre,
-          kmAnterior: v.kilometrajeActual,
-          kilometraje: v.kilometrajeActual, 
-          vencimientoKM: v.kilometrajeActual + 5000 
-        }));
-      }
-    }
-  }, [newMaintenance.vehicleId, flota]);
-
-  useEffect(() => {
-    if (showManualBooking && manualRes.auto && manualRes.inicio && manualRes.fin) {
-      const v = flota.find(f => f.nombre === manualRes.auto);
-      if (v) {
-        const start = new Date(`${manualRes.inicio}T${manualRes.horaIni || '00:00'}`);
-        const end = new Date(`${manualRes.fin}T${manualRes.horaFin || '23:59'}`);
-        const diffTime = Math.abs(end.getTime() - start.getTime());
-        const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1; 
-        const calcTotal = days * v.precio;
-        setManualRes(prev => ({...prev, total: calcTotal}));
-      }
-    }
-  }, [manualRes.auto, manualRes.inicio, manualRes.fin, manualRes.horaIni, manualRes.horaFin, showManualBooking, flota]);
-
-  // Handlers
-  const handleSaveMaintenance = () => {
-    if (!newMaintenance.vehicleId || !newMaintenance.kilometraje || !newMaintenance.descripcion) {
-      return alert("Complete los campos obligatorios");
-    }
-
-    const finalAmount = newMaintenance.currency === 'GS' 
-      ? newMaintenance.monto! / exchangeRate 
-      : newMaintenance.monto!;
-
-    const newM: MaintenanceRecord = { 
-      id: `M-${Date.now()}`, 
-      vehicleId: newMaintenance.vehicleId, 
-      vehicleName: newMaintenance.vehicleName!, 
-      fecha: newMaintenance.fecha || new Date().toISOString().split('T')[0], 
-      kilometraje: Number(newMaintenance.kilometraje), 
-      descripcion: newMaintenance.descripcion, 
-      monto: finalAmount, 
-      tipo: newMaintenance.tipo as any, 
-      vencimientoKM: Number(newMaintenance.vencimientoKM),
-      vencimientoFecha: newMaintenance.vencimientoFecha,
-      realizado: true, 
-      images: newMaintenance.images || []
-    };
-
-    setMantenimientos([...mantenimientos, newM]);
-
-    if (newMaintenance.vehicleId) {
-      const updatedFlota = flota.map(v => {
-        if (v.id === newMaintenance.vehicleId) {
-          const newKM = Math.max(v.kilometrajeActual, Number(newMaintenance.kilometraje));
-          return { ...v, kilometrajeActual: newKM };
+  // Alertas Globales (Taller y Vencimientos)
+  const globalAlerts = useMemo(() => {
+    const alerts = [];
+    // KM Alerts
+    flota.forEach(v => {
+      if (v.mantenimientoKM) {
+        const kmRemaining = v.mantenimientoKM - v.kilometrajeActual;
+        if (kmRemaining < thresholds.kmThreshold) {
+          alerts.push({ 
+            id: `km-${v.id}`, 
+            type: 'maint', 
+            msg: `${v.nombre}: Mantenimiento en ${kmRemaining} KM`, 
+            severity: kmRemaining < 200 ? 'critical' : 'high',
+            icon: Wrench
+          });
         }
-        return v;
-      });
-      setFlota(updatedFlota);
-    }
-
-    setShowAddMaintenance(false);
-    setNewMaintenance({ vehicleId: '', descripcion: '', monto: 0, tipo: 'Preventivo', kilometraje: 0, kmAnterior: 0, vencimientoKM: 0, currency: 'BRL', realizado: true, images: [] });
-    alert("Mantenimiento guardado y Kilometraje del vehículo actualizado.");
-  };
-
-  const handleMaintenanceImageUpload = (e: React.ChangeEvent<HTMLInputElement>, recordId: string) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const newImage = reader.result as string;
-        setMantenimientos(prev => prev.map(m => {
-          if (m.id === recordId) {
-            return { ...m, images: [...(m.images || []), newImage] };
-          }
-          return m;
-        }));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSaveExpense = () => {
-    if (!newExpense.concepto || !newExpense.monto) return alert("Complete concepto y monto");
-    
-    const finalAmount = newExpense.currency === 'GS' 
-      ? newExpense.monto / exchangeRate 
-      : newExpense.monto;
-
-    const g: Gasto = {
-      id: `G-${Date.now()}`,
-      concepto: newExpense.currency === 'GS' 
-        ? `${newExpense.concepto} (Gs. ${newExpense.monto.toLocaleString()})` 
-        : newExpense.concepto,
-      monto: finalAmount,
-      fecha: newExpense.fecha,
-      categoria: newExpense.categoria as any,
-      vehicleId: newExpense.vehicleId
-    };
-
-    setGastos([...gastos, g]);
-    setShowAddExpense(false);
-    setNewExpense({ concepto: '', monto: 0, currency: 'BRL', categoria: 'Operativo', vehicleId: '', fecha: new Date().toISOString().split('T')[0] });
-  };
-
-  const handleManualReservationSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSavingManual(true);
-    
-    const res: Reservation = {
-      id: `JM-MAN-${Date.now()}`, 
-      cliente: manualRes.cliente.toUpperCase(), 
-      email: 'manual@jmasociados.com', 
-      ci: 'MANUAL', 
-      documentType: 'CI', 
-      celular: '---', 
-      auto: manualRes.auto, 
-      inicio: manualRes.inicio, 
-      fin: manualRes.fin, 
-      total: manualRes.total, 
-      status: 'Confirmed', 
-      includeInCalendar: true,
-      contractUrl: manualContractFile || undefined
-    };
-
-    if (onAddReservation) {
-      onAddReservation(res);
-      setTimeout(() => {
-        setIsSavingManual(false);
-        setShowManualBooking(false);
-        setManualRes({ cliente: '', auto: '', inicio: '', fin: '', total: 0, horaIni: '08:00', horaFin: '17:00' });
-        setManualContractFile(null);
-        alert("Contrato registrado y fechas bloqueadas en Agenda.");
-      }, 1000);
-    } else {
-      setReservations([res, ...reservations]);
-      setIsSavingManual(false);
-      setShowManualBooking(false);
-    }
-  };
-
-  const stats = useMemo(() => {
-    const filteredRes = reservations.filter(r => {
-      const matchV = finanzasFilter.vehicle ? r.auto === finanzasFilter.vehicle : true;
-      const matchD = (finanzasFilter.start && finanzasFilter.end) ? (new Date(r.inicio) >= new Date(finanzasFilter.start) && new Date(r.inicio) <= new Date(finanzasFilter.end)) : true;
-      return matchV && matchD;
-    });
-    
-    const filteredGastos = gastos.filter(g => {
-      const matchV = finanzasFilter.vehicle ? g.vehicleId === finanzasFilter.vehicle : true;
-      const matchD = (finanzasFilter.start && finanzasFilter.end) ? (new Date(g.fecha) >= new Date(finanzasFilter.start) && new Date(g.fecha) <= new Date(finanzasFilter.end)) : true;
-      return matchV && matchD;
-    });
-
-    const income = filteredRes.reduce((s, r) => s + (r.total || 0), 0);
-    const expense = filteredGastos.reduce((s, g) => s + (g.monto || 0), 0) + 
-                    mantenimientos
-                      .filter(m => finanzasFilter.vehicle ? m.vehicleId === finanzasFilter.vehicle : true)
-                      .reduce((s, m) => s + m.monto, 0);
-    
-    const monthlyData = new Map();
-    const getMonthName = (dateStr: string) => {
-        const date = new Date(dateStr);
-        return date.toLocaleString('es-ES', { month: 'short' }).toUpperCase();
-    };
-
-    filteredRes.forEach(r => {
-      if(!r.inicio) return;
-      const monthKey = r.inicio.substring(0, 7); 
-      const label = getMonthName(r.inicio);
-      if (!monthlyData.has(monthKey)) monthlyData.set(monthKey, { name: label, key: monthKey, ing: 0, gas: 0 });
-      monthlyData.get(monthKey).ing += r.total;
-    });
-    filteredGastos.forEach(g => {
-       if(!g.fecha) return;
-       const monthKey = g.fecha.substring(0, 7);
-       const label = getMonthName(g.fecha);
-       if (!monthlyData.has(monthKey)) monthlyData.set(monthKey, { name: label, key: monthKey, ing: 0, gas: 0 });
-       monthlyData.get(monthKey).gas += g.monto;
-    });
-    
-    const barData = Array.from(monthlyData.values()).sort((a,b) => a.key.localeCompare(b.key));
-    
-    const pieData = [
-      { name: 'Operativo', value: filteredGastos.filter(g => g.categoria === 'Operativo').reduce((s, g) => s + g.monto, 0) },
-      { name: 'Taller', value: mantenimientos.filter(m => finanzasFilter.vehicle ? m.vehicleId === finanzasFilter.vehicle : true).reduce((s, m) => s + m.monto, 0) },
-      { name: 'Seguros', value: filteredGastos.filter(g => g.categoria === 'Seguros').reduce((s, g) => s + g.monto, 0) },
-      { name: 'Cuotas', value: filteredGastos.filter(g => g.categoria === 'Cuotas').reduce((s, g) => s + g.monto, 0) }
-    ].filter(v => v.value > 0);
-    return { income, expense, balance: income - expense, barData, pieData };
-  }, [reservations, gastos, mantenimientos, finanzasFilter]);
-
-  const filteredReservations = useMemo(() => {
-    return reservations.filter(r => {
-      const matchesStatus = contractFilters.status === 'All' || r.status === contractFilters.status;
-      let matchesDate = true;
-      if (contractFilters.startDate && contractFilters.endDate) {
-        const rStart = new Date(r.inicio).getTime();
-        const fStart = new Date(contractFilters.startDate).getTime();
-        const fEnd = new Date(contractFilters.endDate).getTime();
-        matchesDate = rStart >= fStart && rStart <= fEnd;
       }
-      const matchClient = contractFilters.clientName ? r.cliente.toLowerCase().includes(contractFilters.clientName.toLowerCase()) : true;
-      const matchVehicle = contractFilters.vehicleName ? r.auto.toLowerCase().includes(contractFilters.vehicleName.toLowerCase()) : true;
-
-      return matchesStatus && matchesDate && matchClient && matchVehicle;
     });
-  }, [reservations, contractFilters]);
-  
-  const filteredFleet = useMemo(() => {
-    return flota.filter(v => {
-      const matchSearch = v.nombre.toLowerCase().includes(fleetFilter.search.toLowerCase()) || v.placa.toLowerCase().includes(fleetFilter.search.toLowerCase());
-      const matchStatus = fleetFilter.status === 'All' || v.estado === fleetFilter.status;
-      const matchType = fleetFilter.type === 'All' || v.tipo === fleetFilter.type;
-      return matchSearch && matchStatus && matchType;
+    // Date Alerts (Vencimientos)
+    vencimientos.forEach(v => {
+      const daysLeft = (new Date(v.vencimiento).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24);
+      if (!v.pagado && daysLeft < thresholds.daysThreshold) {
+        alerts.push({ 
+          id: `exp-${v.id}`, 
+          type: 'expire', 
+          msg: `${v.vehicleName}: Vence ${v.tipo} en ${Math.ceil(daysLeft)} días`, 
+          severity: daysLeft < 3 ? 'critical' : 'medium',
+          icon: Bell
+        });
+      }
     });
-  }, [flota, fleetFilter]);
+    return alerts;
+  }, [flota, vencimientos, thresholds]);
 
-  const parseDate = (dStr: string) => { if (!dStr) return new Date(); if(dStr.includes('/')) { const [d, m, y] = dStr.split('/'); return new Date(Number(y), Number(m)-1, Number(d)); } const parts = dStr.split('-'); if(parts.length === 3) return new Date(Number(parts[0]), Number(parts[1])-1, Number(parts[2])); return new Date(dStr); };
-  const formatDate = (isoStr: string) => { if(!isoStr) return '-'; const parts = isoStr.split('-'); if(parts.length===3) return `${parts[2]}/${parts[1]}/${parts[0]}`; return isoStr; };
-  
-  const handleApplyChanges = () => { if (!managingRes) return; let updatedReservations = [...reservations]; const dateNow = new Date().toLocaleDateString('es-PY'); if (manageMode === 'swap') { if (!swapVehicleId) return alert('Seleccione un vehículo'); const targetVehicle = flota.find(v => v.id === swapVehicleId); if (!targetVehicle) return; const { newTotal, diff } = manualSwapValues; updatedReservations = updatedReservations.map(r => r.id === managingRes.id ? { ...r, auto: targetVehicle.nombre, total: newTotal, obs: `${r.obs || ''} | [CAMBIO ${dateNow}]: ${managingRes.auto} -> ${targetVehicle.nombre}. Nuevo Total: R$ ${newTotal}. Dif: R$ ${diff}. Nota: ${customObs || 'Sin notas.'}` } : r ); alert(diff > 0 ? `Unidad cambiada. El cliente debe abonar la diferencia de R$ ${diff}.` : `Unidad cambiada. Saldo a favor del cliente: R$ ${Math.abs(diff)}.`); } else if (manageMode === 'cancel') { const { penalty, refund } = manualCancelValues; if(!confirm(`CONFIRMACIÓN DE RESCISIÓN MANUAL\n\nTotal Original: R$ ${managingRes.total}\n\nRetención (Multa Definida): R$ ${penalty}\nDevolución Cliente: R$ ${refund}\n\n¿Proceder con estos valores?`)) return; const obsText = ` | [RESCISIÓN ${dateNow}]: Contrato cancelado. Multa retenida: R$ ${penalty}. Devolución autorizada al cliente: R$ ${refund}. Nota: ${customObs || 'Ajuste manual aplicado.'}`; updatedReservations = updatedReservations.map(r => r.id === managingRes.id ? { ...r, status: 'Cancelled', obs: (r.obs || '') + obsText } : r); alert(`Contrato rescindido. Se ha dejado constancia en el historial.`); } setReservations(updatedReservations); setManagingRes(null); setCustomObs(''); };
-  const handleVerifyPayment = (resId: string) => { if(confirm("¿Validar manualmente el pago de esta reserva y marcar como CONFIRMADA?")) { setReservations(reservations.map(r => r.id === resId ? {...r, status: 'Confirmed'} : r)); } };
-  const handleSendMessage = async () => { if (!chatInput.trim()) return; const userMsg = chatInput; setChatInput(''); setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]); setIsChatLoading(true); try { const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' }); let modelName = 'gemini-3-pro-preview'; let tools: any[] = []; if (groundingMode === 'search') { modelName = 'gemini-3-flash-preview'; tools = [{ googleSearch: {} }]; } else if (groundingMode === 'maps') { modelName = 'gemini-2.5-flash'; tools = [{ googleMaps: {} }]; } const response = await ai.models.generateContent({ model: modelName, contents: userMsg, config: { tools: tools.length > 0 ? tools : undefined, systemInstruction: "Eres un asistente ejecutivo para 'JM Alquiler de Vehículos'. Responde de forma breve, profesional y estratégica." } }); let responseText = response.text || "No response text."; let sources: { uri: string; title: string }[] = []; if (groundingMode === 'search') { const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks; if (chunks) chunks.forEach((c: any) => { if (c.web?.uri) sources.push({ uri: c.web.uri, title: c.web.title || 'Fuente Externa' }); }); } else if (groundingMode === 'maps') { const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks; if (chunks) chunks.forEach((c: any) => { if(c.web?.uri) sources.push({ uri: c.web.uri, title: "Google Maps"}); }); } setChatMessages(prev => [...prev, { role: 'model', text: responseText, sources }]); } catch (error) { setChatMessages(prev => [...prev, { role: 'model', text: "Error de conexión con IA.", isError: true }]); } finally { setIsChatLoading(false); } };
-  const handleGenerateVideo = async () => { if (!veoImage) return alert("Imagen requerida."); setIsVeoGenerating(true); setGeneratedVideoUrl(null); try { const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' }); const base64Image = veoImage.split(',')[1]; let operation = await ai.models.generateVideos({ model: 'veo-3.1-fast-generate-preview', prompt: veoPrompt || "Cinematic shot of this car driving, 4k", image: { imageBytes: base64Image, mimeType: 'image/png' }, config: { numberOfVideos: 1, aspectRatio: veoAspectRatio, resolution: '720p' } }); while (!operation.done) { await new Promise(resolve => setTimeout(resolve, 5000)); operation = await ai.operations.getVideosOperation({ operation: operation }); } const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri; if (videoUri) setGeneratedVideoUrl(`${videoUri}&key=${process.env.API_KEY}`); } catch (error) { alert("Error: " + error); } finally { setIsVeoGenerating(false); } };
-  const handleVeoImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => setVeoImage(reader.result as string); reader.readAsDataURL(file); } };
-  
-  // Updated Vehicle Save with proper type checking
-  const handleSaveVehicle = () => { if(!newVehicle.nombre || !newVehicle.precio || !newVehicle.placa) return alert("Complete los campos obligatorios (*)"); const finalVehicle: Vehicle = { id: `V-${Date.now()}`, nombre: newVehicle.nombre || 'Nuevo Vehículo', precio: Number(newVehicle.precio), img: newVehicle.img || 'https://via.placeholder.com/400x200?text=Sin+Imagen', estado: (newVehicle.estado as any) || 'Disponible', placa: newVehicle.placa || 'SIN-PLACA', color: newVehicle.color || 'Blanco', specs: newVehicle.specs || [], kilometrajeActual: Number(newVehicle.kilometrajeActual), transmision: newVehicle.transmision, combustible: newVehicle.combustible, asientos: Number(newVehicle.asientos), tipo: newVehicle.tipo, checklists: [] }; setFlota([...flota, finalVehicle]); setShowAddVehicle(false); setNewVehicle({ nombre: '', precio: 0, placa: '', color: '', kilometrajeActual: 0, transmision: 'Automático', combustible: 'Nafta', asientos: 5, tipo: 'Compacto', img: '', specs: [] }); };
-  const addSpec = () => { if (tempSpec && newVehicle.specs) { setNewVehicle({...newVehicle, specs: [...newVehicle.specs, tempSpec]}); setTempSpec(''); } };
-  const handleAddExpiration = () => { 
-    if (!newExpiration.vehicleId || !newExpiration.vencimiento || !newExpiration.monto) return alert("Complete todos los campos"); 
-    const vehicle = flota.find(f => f.id === newExpiration.vehicleId); 
-    const record: ExpirationRecord = { 
-      id: `VENC-${Date.now()}`, 
-      vehicleId: newExpiration.vehicleId, 
-      vehicleName: vehicle ? vehicle.nombre : 'Desconocido', 
-      tipo: newExpiration.tipo || 'Seguro', 
-      vencimiento: newExpiration.vencimiento, 
-      monto: Number(newExpiration.monto), 
-      pagado: false, 
-      referencia: newExpiration.referencia || '' 
-    }; 
-    setVencimientos([...vencimientos, record]); 
-    setNewExpiration({ tipo: 'Seguro', monto: 0, vencimiento: '', vehicleId: '', pagado: false });
-    setShowAddExpiration(false);
-  };
+  // Finanzas Logic
+  const stats = useMemo(() => {
+    let filteredRes = reservations.filter(r => {
+      const rDate = new Date(r.inicio);
+      return rDate >= new Date(dateRange.start) && rDate <= new Date(dateRange.end);
+    });
+    let filteredGastos = gastos.filter(g => {
+      const gDate = new Date(g.fecha);
+      return gDate >= new Date(dateRange.start) && gDate <= new Date(dateRange.end);
+    });
 
-  const handleSaveChecklist = () => { if (!currentChecklist.responsable || !currentChecklist.kilometraje) return alert("Complete Responsable y KM"); const vehicle = flota.find(v => v.id === showNewChecklist); if (!vehicle) return; const checklist: ChecklistLog = { id: `CH-${Date.now()}`, tipo: checklistType, fecha: new Date().toISOString(), responsable: currentChecklist.responsable || '', kilometraje: currentChecklist.kilometraje || 0, combustible: currentChecklist.combustible as any, exterior: currentChecklist.exterior as any, interior: currentChecklist.interior as any, mecanica: currentChecklist.mecanica as any, documentacion: currentChecklist.documentacion as any, observacionesGlobales: currentChecklist.observacionesGlobales || '', firmado: true }; const updatedVehicle = { ...vehicle, kilometrajeActual: checklistType === 'Check-In' ? checklist.kilometraje : vehicle.kilometrajeActual, checklists: [...(vehicle.checklists || []), checklist] }; setFlota(flota.map(v => v.id === showNewChecklist ? updatedVehicle : v)); setShowNewChecklist(null); alert(`Inspección ${checklistType} guardada con éxito.`); };
-  const updateItemStatus = (category: string, index: number, status: 'ok' | 'bad' | 'na') => { const list = [...(currentChecklist as any)[category]]; list[index].status = status; setCurrentChecklist({ ...currentChecklist, [category]: list }); };
-  const criticalVehicles = useMemo(() => flota.filter(v => v.maintenanceStatus === 'critical'), [flota]);
-  const warningVehicles = useMemo(() => flota.filter(v => v.maintenanceStatus === 'warning'), [flota]);
-  const handleManualContractUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => setManualContractFile(reader.result as string); reader.readAsDataURL(file); } };
-  
-  const handleRemoveSpec = (index: number) => { if (!editingVehicle) return; const newSpecs = [...editingVehicle.specs]; newSpecs.splice(index, 1); setEditingVehicle({ ...editingVehicle, specs: newSpecs }); };
-  const handleAddSpec = () => { if (!editingVehicle || !tempSpec) return; setEditingVehicle({ ...editingVehicle, specs: [...editingVehicle.specs, tempSpec] }); setTempSpec(''); };
-  
-  const handleEditVehicleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && editingVehicle) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditingVehicle({ ...editingVehicle, img: reader.result as string });
-      };
-      reader.readAsDataURL(file);
+    if (finanzasFilterVehicle !== 'all') {
+      filteredRes = filteredRes.filter(r => r.auto.includes(finanzasFilterVehicle));
+      filteredGastos = filteredGastos.filter(g => {
+        const v = flota.find(fl => fl.id === g.vehicleId);
+        return v && v.nombre.includes(finanzasFilterVehicle);
+      });
     }
+
+    const totalIngresos = filteredRes.reduce((acc, curr) => acc + (curr.total || 0), 0);
+    const totalGastos = filteredGastos.reduce((acc, curr) => acc + (curr.monto || 0), 0);
+    
+    const chartData = [
+      { name: 'Ingresos', valor: totalIngresos, fill: '#800000' },
+      { name: 'Gastos', valor: totalGastos, fill: '#D4AF37' }
+    ];
+
+    const categoryData = Object.entries(
+      filteredGastos.reduce((acc: any, curr) => {
+        acc[curr.categoria] = (acc[curr.categoria] || 0) + curr.monto;
+        return acc;
+      }, {})
+    ).map(([name, value]) => ({ name, value }));
+
+    return { totalIngresos, totalGastos, chartData, categoryData, filteredGastos };
+  }, [reservations, gastos, finanzasFilterVehicle, dateRange, flota]);
+
+  const saveVehicleChanges = (v: Vehicle) => {
+    setFlota(flota.map(item => item.id === v.id ? v : item));
+    setEditingVehicle(null);
   };
 
-  const renderInspectionSection = (title: string, category: string, items: InspectionItem[]) => (
-    <div className="bg-gray-50 dark:bg-dark-base rounded-[2rem] p-6 border border-gray-100 dark:border-white/5">
-      <h4 className="text-[10px] font-black uppercase text-gold tracking-widest mb-4 flex items-center gap-2">
-        <ShieldCheck size={14}/> {title}
-      </h4>
-      <div className="grid grid-cols-1 gap-3">
-        {items?.map((item, idx) => (
-          <div key={idx} className="flex items-center justify-between bg-white dark:bg-dark-elevated p-3 rounded-xl border border-gray-100 dark:border-white/5 shadow-sm">
-            <span className="text-[10px] font-bold uppercase text-gray-600 dark:text-gray-300">{item.label}</span>
-            <div className="flex gap-1">
-              <button 
-                onClick={() => updateItemStatus(category, idx, 'ok')}
-                className={`p-2 rounded-lg transition-all ${item.status === 'ok' ? 'bg-green-500 text-white shadow-lg scale-105' : 'bg-gray-100 dark:bg-white/5 text-gray-300'}`}
-              >
-                <Check size={14} strokeWidth={3}/>
-              </button>
-              <button 
-                onClick={() => updateItemStatus(category, idx, 'bad')}
-                className={`p-2 rounded-lg transition-all ${item.status === 'bad' ? 'bg-red-500 text-white shadow-lg scale-105' : 'bg-gray-100 dark:bg-white/5 text-gray-300'}`}
-              >
-                <X size={14} strokeWidth={3}/>
-              </button>
-              <button 
-                onClick={() => updateItemStatus(category, idx, 'na')}
-                className={`px-2 py-1 rounded-lg text-[9px] font-black transition-all ${item.status === 'na' ? 'bg-gray-500 text-white shadow-lg' : 'bg-gray-100 dark:bg-white/5 text-gray-300'}`}
-              >
-                N/A
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  const markVencimientoPagado = (id: string) => {
+    setVencimientos(vencimientos.map(v => v.id === id ? { ...v, pagado: true } : v));
+  };
+
+  const toggleVehicleStatus = (id: string) => {
+    setFlota(flota.map(v => v.id === id ? { ...v, estado: v.estado === 'En Taller' ? 'Disponible' : 'En Taller' } : v));
+  };
+
+  const updateInspectionItem = (logId: string, category: 'exterior' | 'interior' | 'mecanica', itemIdx: number, updates: Partial<InspectionItem>) => {
+    setChecklists(checklists.map(log => {
+      if (log.id === logId) {
+        const newCat = [...log[category]];
+        newCat[itemIdx] = { ...newCat[itemIdx], ...updates };
+        return { ...log, [category]: newCat };
+      }
+      return log;
+    }));
+  };
 
   return (
-    <div className="space-y-8 animate-slideUp pb-40 max-w-full overflow-x-hidden relative">
-      <div className="px-4 flex justify-between items-center print:hidden">
-        <div>
-          <h2 className="text-3xl font-robust text-bordeaux-950 dark:text-white italic tracking-tighter leading-none">CENTRO DE GESTIÓN MASTER</h2>
-          <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em] mt-2 flex items-center gap-2">
-            <ShieldCheck size={14}/> Terminal de Control Operativo
-          </p>
-        </div>
-        <div className="flex gap-2">
-           <button onClick={() => window.print()} className="p-4 bg-gray-950 text-white rounded-[1.5rem] shadow-2xl hover:scale-105 transition-transform" title="Generar PDF (Imprimir)">
-              <Printer size={20}/>
-           </button>
-           <button onClick={() => {
-              if (activeTab === 'contratos') exportToCSV(filteredReservations, 'Contratos_JM');
-              else if (activeTab === 'flota') exportToCSV(flota, 'Flota_JM');
-              else if (activeTab === 'taller') exportToCSV(mantenimientos, 'Taller_JM');
-              else if (activeTab === 'vencimientos') exportToCSV(vencimientos, 'Alertas_JM');
-              else if (activeTab === 'finanzas') exportToCSV(gastos, 'Gastos_JM');
-              else alert("Exportación no disponible para esta pestaña");
-           }} className="p-4 bg-bordeaux-800 text-white rounded-[1.5rem] shadow-2xl hover:scale-105 transition-transform flex items-center gap-2" title="Exportar CSV">
-              <Download size={20}/> <span className="text-[9px] font-black uppercase hidden lg:inline">CSV</span>
-           </button>
-        </div>
-      </div>
-
-      <div className="flex bg-white dark:bg-dark-elevated p-2 rounded-[3rem] border-2 dark:border-white/5 overflow-x-auto gap-2 scrollbar-hide shadow-xl print:hidden">
-        {[
-          {id:'finanzas', icon: Landmark, label: 'Finanzas'},
-          {id:'contratos', icon: FileText, label: 'Contratos'},
-          {id:'flota', icon: Car, label: 'Flota'},
-          {id:'taller', icon: Wrench, label: 'Taller'},
-          {id:'checklists', icon: ClipboardList, label: 'Inspecciones'},
-          {id:'vencimientos', icon: Bell, label: 'Vencimientos'},
-          {id:'ai_studio', icon: Sparkles, label: 'AI Studio'}
-        ].map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} 
-            className={`flex flex-col items-center justify-center gap-1.5 min-w-[100px] py-5 rounded-[2.2rem] transition-all ${
-              activeTab === tab.id ? 'bg-bordeaux-950 text-white shadow-lg scale-105' : 'text-gray-400 hover:text-bordeaux-800'
-            }`}>
-            <tab.icon size={18} />
-            <span className="text-[8px] font-black uppercase tracking-widest">{tab.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* FINANZAS - KEPT SAME AS REQUESTED */}
-      {activeTab === 'finanzas' && (
-        <div className="space-y-8 animate-fadeIn px-2">
-          {/* Filters & Actions */}
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-             <div className="flex gap-4 bg-white dark:bg-dark-elevated p-2 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm">
-                <input type="date" value={finanzasFilter.start} onChange={e => setFinanzasFilter({...finanzasFilter, start: e.target.value})} className="bg-transparent text-xs font-bold outline-none uppercase" />
-                <span className="text-gray-300">|</span>
-                <input type="date" value={finanzasFilter.end} onChange={e => setFinanzasFilter({...finanzasFilter, end: e.target.value})} className="bg-transparent text-xs font-bold outline-none uppercase" />
-                <span className="text-gray-300">|</span>
-                <select 
-                   value={finanzasFilter.vehicle} 
-                   onChange={e => setFinanzasFilter({...finanzasFilter, vehicle: e.target.value})} 
-                   className="bg-transparent text-[10px] font-bold outline-none uppercase dark:text-white"
-                >
-                   <option value="">Toda la Flota</option>
-                   {flota.map(v => <option key={v.id} value={v.id}>{v.nombre}</option>)}
-                </select>
-             </div>
-             <button onClick={() => setShowAddExpense(!showAddExpense)} className="py-4 px-8 bg-bordeaux-950 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 shadow-xl hover:scale-[1.02] transition-transform">
-                <Plus size={16}/> Registrar Gasto
-             </button>
+    <div className="space-y-12 animate-fadeIn font-sans pb-20">
+      
+      {/* Platinum Global Alerts Bar */}
+      {globalAlerts.length > 0 && (
+        <div className="bg-red-50 dark:bg-red-950/20 border-l-8 border-red-600 p-8 rounded-[2.5rem] shadow-2xl animate-slideUp">
+          <div className="flex items-center gap-6 mb-6">
+             <Bell className="text-red-600 animate-tada" size={28} />
+             <h4 className="text-xl font-robust text-red-950 dark:text-red-200 uppercase tracking-tight italic">Centro de Alertas Platinum</h4>
           </div>
-
-          {/* Add Expense Form */}
-          {showAddExpense && (
-             <div className="bg-white dark:bg-dark-card p-8 rounded-[3rem] border-2 border-gold shadow-2xl space-y-6 animate-slideUp">
-                <h3 className="text-xl font-robust text-bordeaux-950 dark:text-white italic">Nuevo Registro Financiero</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   <input type="text" placeholder="Concepto del Gasto" value={newExpense.concepto} onChange={e => setNewExpense({...newExpense, concepto: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
-                   <div className="flex gap-2">
-                      <input type="number" placeholder="Monto" value={newExpense.monto || ''} onChange={e => setNewExpense({...newExpense, monto: Number(e.target.value)})} className="flex-1 bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
-                      <select value={newExpense.currency} onChange={e => setNewExpense({...newExpense, currency: e.target.value as any})} className="w-24 bg-gray-50 dark:bg-dark-base rounded-2xl px-2 py-4 font-bold border-0 outline-none text-center">
-                         <option value="BRL">R$</option>
-                         <option value="GS">Gs.</option>
-                      </select>
-                   </div>
-                   <select value={newExpense.categoria} onChange={e => setNewExpense({...newExpense, categoria: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none">
-                      <option value="Operativo">Operativo</option>
-                      <option value="Mantenimiento">Mantenimiento</option>
-                      <option value="Seguros">Seguros</option>
-                      <option value="Cuotas">Cuotas</option>
-                      <option value="Otros">Otros</option>
-                   </select>
-                   <select value={newExpense.vehicleId} onChange={e => setNewExpense({...newExpense, vehicleId: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none">
-                      <option value="">(Opcional) Asignar a Vehículo...</option>
-                      {flota.map(v => <option key={v.id} value={v.id}>{v.nombre}</option>)}
-                   </select>
-                   <input type="date" value={newExpense.fecha} onChange={e => setNewExpense({...newExpense, fecha: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
-                </div>
-                <button onClick={handleSaveExpense} className="w-full py-5 bordeaux-gradient text-white rounded-[2rem] font-black uppercase tracking-widest shadow-xl">Guardar Registro</button>
-             </div>
-          )}
-          {/* ... Rest of Finanzas ... */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+             {globalAlerts.map((alert) => (
+               <div key={alert.id} className="flex items-center justify-between bg-white/80 dark:bg-black/40 backdrop-blur-md p-5 rounded-3xl border border-red-100 dark:border-red-900/30 shadow-sm group hover:scale-[1.02] transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className={`p-3 rounded-2xl ${alert.severity === 'critical' ? 'bg-red-600 text-white animate-pulse' : 'bg-amber-100 text-amber-600'}`}>
+                        <alert.icon size={18}/>
+                    </div>
+                    <p className="text-[11px] font-bold text-gray-700 dark:text-gray-300 italic">{alert.msg}</p>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${alert.severity === 'critical' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'}`}>
+                    {alert.severity}
+                  </span>
+               </div>
+             ))}
+          </div>
         </div>
       )}
 
-      {/* CONTRATOS TAB - Content same as before... */}
-      {activeTab === 'contratos' && (
-         <div className="space-y-6 px-2 animate-fadeIn">
-            {/* Same content as provided in previous prompt for Contratos */}
-            {/* ... */}
-         </div>
-      )}
+      {/* Admin Panel Tabs Navigation */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-10">
+        <div className="space-y-2">
+           <div className="flex items-center gap-4">
+             <div className="p-4 bordeaux-gradient rounded-[2.5rem] shadow-xl ring-4 ring-gold/10">
+                <ShieldCheck className="text-gold" size={36} />
+             </div>
+             <div>
+                <h2 className="text-5xl font-robust text-bordeaux-950 dark:text-white italic uppercase tracking-tighter leading-none">Terminal Maestro</h2>
+                <p className="text-[10px] font-black text-gold uppercase tracking-[0.5em] italic mt-1">Gestión Centralizada 2026</p>
+             </div>
+           </div>
+        </div>
+        <div className="flex flex-wrap bg-gray-100 dark:bg-dark-elevated p-2 rounded-[3.5rem] border border-gray-200 dark:border-white/5 shadow-inner">
+           {[
+             { id: 'flota', label: 'Flota', icon: Car },
+             { id: 'taller', label: 'Taller', icon: Wrench },
+             { id: 'inspecciones', label: 'Inspecciones', icon: ClipboardCheck },
+             { id: 'vencimientos', label: 'Vencimientos', icon: Bell },
+             { id: 'finanzas', label: 'Finanzas', icon: Landmark }
+           ].map(tab => (
+             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
+               className={`relative flex items-center gap-4 px-6 py-4 rounded-full transition-all duration-700 ${
+                 activeTab === tab.id ? 'bg-bordeaux-950 text-white shadow-2xl scale-105' : 'text-gray-400 hover:text-bordeaux-800'
+               }`}>
+               <tab.icon size={16} className={activeTab === tab.id ? 'text-gold' : ''} />
+               <span className="text-[10px] font-black uppercase tracking-widest">{tab.label}</span>
+             </button>
+           ))}
+        </div>
+      </div>
 
-      {/* FLOTA TAB - Content same as before... */}
-      {activeTab === 'flota' && (
-         <div className="space-y-6 px-2 animate-fadeIn">
-            {/* Same content as provided in previous prompt for Flota */}
-            {/* ... */}
-         </div>
-      )}
+      <div className="min-h-[700px]">
+        
+        {/* FINANZAS SECTION */}
+        {activeTab === 'finanzas' && (
+          <div className="space-y-12 animate-slideUp">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 bg-white dark:bg-dark-card p-10 rounded-[4rem] shadow-xl border dark:border-white/5">
+                <div className="space-y-4">
+                   <label className="text-[9px] font-black text-gold uppercase tracking-[0.2em] ml-4 italic flex items-center gap-2"><Car size={12}/> Unidad</label>
+                   <select 
+                     value={finanzasFilterVehicle} 
+                     onChange={e => setFinanzasFilterVehicle(e.target.value)}
+                     className="w-full bg-gray-50 dark:bg-dark-base rounded-full px-8 py-5 font-bold text-[10px] uppercase tracking-widest outline-none border border-transparent focus:border-gold/30"
+                   >
+                     <option value="all">Todas las Unidades</option>
+                     {flota.map(v => <option key={v.id} value={v.nombre}>{v.nombre}</option>)}
+                   </select>
+                </div>
+                <div className="space-y-4">
+                   <label className="text-[9px] font-black text-gold uppercase tracking-[0.2em] ml-4 italic flex items-center gap-2"><Calendar size={12}/> Desde</label>
+                   <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-base rounded-full px-8 py-5 font-bold text-[10px] uppercase tracking-widest outline-none border border-transparent focus:border-gold/30" />
+                </div>
+                <div className="space-y-4">
+                   <label className="text-[9px] font-black text-gold uppercase tracking-[0.2em] ml-4 italic flex items-center gap-2"><Calendar size={12}/> Hasta</label>
+                   <input type="date" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-base rounded-full px-8 py-5 font-bold text-[10px] uppercase tracking-widest outline-none border border-transparent focus:border-gold/30" />
+                </div>
+            </div>
 
-      {/* TALLER TAB - Content same as before... */}
-      {activeTab === 'taller' && (
-         <div className="space-y-6 px-2 animate-fadeIn">
-            {/* Same content as provided in previous prompt for Taller */}
-            {/* ... */}
-         </div>
-      )}
-
-      {/* INSPECCIONES (CHECKLISTS) - REDESIGNED */}
-      {activeTab === 'checklists' && (
-         <div className="space-y-6 animate-fadeIn px-2">
-            {!showNewChecklist ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {flota.map(v => (
-                   <div key={v.id} className="bg-white dark:bg-dark-card p-6 rounded-[2.5rem] border border-gray-100 dark:border-white/5 shadow-md hover:shadow-xl transition-all cursor-pointer group" onClick={() => {
-                          setShowNewChecklist(v.id);
-                          setChecklistType('Check-In');
-                          setCurrentChecklist({
-                             responsable: '', kilometraje: v.kilometrajeActual, combustible: 'Full', observacionesGlobales: '',
-                             exterior: [{ label: 'Chapa y Pintura', status: 'ok' }, { label: 'Neumáticos', status: 'ok' }, { label: 'Luces / Faros', status: 'ok' }, { label: 'Espejos', status: 'ok' }, { label: 'Cristales', status: 'ok' }],
-                             interior: [{ label: 'Tapicería', status: 'ok' }, { label: 'Tablero / Instrumentos', status: 'ok' }, { label: 'Aire Acondicionado', status: 'ok' }, { label: 'Limpieza', status: 'ok' }, { label: 'Gato / Herramientas', status: 'ok' }],
-                             mecanica: [{ label: 'Niveles (Aceite/Agua)', status: 'ok' }, { label: 'Frenos', status: 'ok' }, { label: 'Batería', status: 'ok' }],
-                             documentacion: [{ label: 'Habilitación Municipal', status: 'ok' }, { label: 'Cédula Verde', status: 'ok' }, { label: 'Seguro Mapfre', status: 'ok' }]
-                          });
-                        }}>
-                      <div className="flex items-center gap-4 mb-4">
-                         <img src={v.img} className="w-24 h-16 object-contain group-hover:scale-110 transition-transform duration-500" />
-                         <div>
-                            <h4 className="font-robust text-bordeaux-950 dark:text-white text-base leading-none">{v.nombre}</h4>
-                            <p className="text-[10px] font-black text-gold uppercase mt-1">{v.placa}</p>
-                            <p className="text-[9px] font-bold text-gray-400 mt-0.5">{v.kilometrajeActual} KM</p>
-                         </div>
-                      </div>
-                      <button 
-                        className="w-full py-4 bg-gray-50 dark:bg-dark-elevated text-bordeaux-800 dark:text-white rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest group-hover:bg-gold/10 group-hover:text-gold transition-colors flex items-center justify-center gap-2"
-                      >
-                        <ClipboardList size={16}/> Iniciar Inspección
-                      </button>
-                   </div>
-                ))}
-              </div>
-            ) : (
-               <div className="bg-white dark:bg-dark-card p-8 md:p-10 rounded-[3rem] border-2 border-gold shadow-2xl space-y-8 animate-slideUp">
-                  
-                  {/* Header Navigation */}
-                  <div className="flex items-center justify-between pb-6 border-b border-gray-100 dark:border-white/5">
-                     <button onClick={() => setShowNewChecklist(null)} className="p-4 bg-gray-100 dark:bg-dark-elevated rounded-full hover:bg-gray-200"><ChevronLeft size={24}/></button>
-                     <div className="text-center">
-                        <h3 className="text-2xl font-robust italic text-bordeaux-950 dark:text-white">Control de Estado</h3>
-                        <p className="text-[10px] font-black uppercase text-gold tracking-[0.4em]">Protocolo de Entrega y Recepción</p>
-                     </div>
-                     <div className="w-14"></div>
-                  </div>
-
-                  {/* Context Selector */}
-                  <div className="flex p-1 bg-gray-100 dark:bg-dark-base rounded-[2rem]">
-                     <button onClick={() => setChecklistType('Check-Out')} className={`flex-1 py-4 rounded-[1.8rem] text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${checklistType === 'Check-Out' ? 'bg-white shadow-lg text-bordeaux-800' : 'text-gray-400'}`}>
-                        <ArrowUpRight size={16} className="text-blue-500"/> Salida (Check-Out)
-                     </button>
-                     <button onClick={() => setChecklistType('Check-In')} className={`flex-1 py-4 rounded-[1.8rem] text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${checklistType === 'Check-In' ? 'bg-white shadow-lg text-bordeaux-800' : 'text-gray-400'}`}>
-                        <ArrowDownLeft size={16} className="text-green-500"/> Retorno (Check-In)
-                     </button>
-                  </div>
-
-                  {/* General Info */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                     <div className="space-y-4">
-                        <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Responsable / Agente</label>
-                        <input type="text" placeholder="Nombre del Encargado" value={currentChecklist.responsable} onChange={e => setCurrentChecklist({...currentChecklist, responsable: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-base px-6 py-4 rounded-2xl font-bold border-0 outline-none focus:ring-2 focus:ring-gold/20" />
-                     </div>
-                     <div className="space-y-4">
-                        <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Kilometraje Actual</label>
-                        <input type="number" placeholder="000000" value={currentChecklist.kilometraje} onChange={e => setCurrentChecklist({...currentChecklist, kilometraje: Number(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-base px-6 py-4 rounded-2xl font-bold border-0 outline-none focus:ring-2 focus:ring-gold/20" />
-                     </div>
-                  </div>
-
-                  {/* Fuel Gauge Visual Selector */}
-                  <div className="bg-gray-50 dark:bg-dark-base p-6 rounded-[2.5rem] border border-gray-100 dark:border-white/5">
-                     <h4 className="text-[10px] font-black uppercase text-gold tracking-widest mb-4 flex items-center gap-2"><Fuel size={14}/> Nivel de Combustible</h4>
-                     <div className="flex gap-1 h-12">
-                        {['1/8', '1/4', '1/2', '3/4', 'Full'].map((lvl) => (
-                           <button 
-                             key={lvl}
-                             onClick={() => setCurrentChecklist({...currentChecklist, combustible: lvl as any})}
-                             className={`flex-1 rounded-xl transition-all font-black text-[9px] uppercase ${
-                               currentChecklist.combustible === lvl 
-                                 ? 'bg-gradient-to-r from-bordeaux-600 to-bordeaux-800 text-white shadow-lg scale-105' 
-                                 : 'bg-white dark:bg-dark-elevated text-gray-400'
-                             }`}
-                           >
-                              {lvl}
-                           </button>
-                        ))}
-                     </div>
-                  </div>
-
-                  {/* Inspection Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                     {renderInspectionSection('Carrocería Exterior', 'exterior', currentChecklist.exterior || [])}
-                     {renderInspectionSection('Habitáculo Interior', 'interior', currentChecklist.interior || [])}
-                     {renderInspectionSection('Mecánica Básica', 'mecanica', currentChecklist.mecanica || [])}
-                     {renderInspectionSection('Documentación', 'documentacion', currentChecklist.documentacion || [])}
-                  </div>
-
-                  <div className="pt-6 border-t border-gray-100 dark:border-white/5">
-                     <label className="text-[10px] font-black uppercase text-gray-400 ml-2 mb-2 block">Observaciones Globales</label>
-                     <textarea 
-                        value={currentChecklist.observacionesGlobales} 
-                        onChange={e => setCurrentChecklist({...currentChecklist, observacionesGlobales: e.target.value})}
-                        className="w-full h-32 bg-gray-50 dark:bg-dark-base rounded-[2rem] p-6 text-sm font-medium outline-none resize-none"
-                        placeholder="Detalles adicionales, daños pre-existentes, etc..."
-                     ></textarea>
-                  </div>
-
-                  <button onClick={handleSaveChecklist} className="w-full py-6 bordeaux-gradient text-white rounded-[2rem] font-black text-sm uppercase tracking-[0.3em] shadow-xl hover:scale-[1.01] transition-transform flex items-center justify-center gap-3">
-                     <Save size={18}/> Guardar Inspección
-                  </button>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+               <div className="bg-white dark:bg-dark-card p-10 rounded-[4rem] shadow-2xl border dark:border-white/5 space-y-8 min-h-[450px]">
+                  <h3 className="text-2xl font-robust dark:text-white uppercase italic tracking-tight">Balance de Operaciones</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={stats.chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} vertical={false} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 900, fill: '#666' }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 900, fill: '#666' }} />
+                      <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '25px', border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.1)', fontSize: '10px', textTransform: 'uppercase', fontWeight: 900 }} />
+                      <Bar dataKey="valor" radius={[15, 15, 0, 0]} barSize={60} />
+                    </BarChart>
+                  </ResponsiveContainer>
                </div>
-            )}
-         </div>
-      )}
 
-      {/* VENCIMIENTOS (ALERTS) - REDESIGNED */}
-      {activeTab === 'vencimientos' && (
-         <div className="space-y-8 animate-fadeIn px-2">
-            
-            <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-               <div>
-                  <h3 className="text-2xl font-robust italic text-bordeaux-950 dark:text-white">Alertas & Vencimientos</h3>
-                  <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mt-1">Gestión de Seguros, Patentes y Cuotas</p>
+               <div className="bg-white dark:bg-dark-card p-10 rounded-[4rem] shadow-2xl border dark:border-white/5 flex flex-col">
+                  <div className="flex justify-between items-center mb-10">
+                    <h3 className="text-2xl font-robust dark:text-white uppercase italic tracking-tight">Registro de Egresos</h3>
+                    <div className="flex gap-4">
+                       <button className="p-4 bg-gray-50 dark:bg-dark-base rounded-2xl text-gold border border-gold/10 hover:scale-110 transition-all shadow-sm"><Filter size={18}/></button>
+                       <button className="p-4 bordeaux-gradient text-white rounded-2xl shadow-xl hover:scale-110 transition-all"><Plus size={18}/></button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto max-h-[400px] pr-4 scrollbar-thin">
+                     <table className="w-full text-left border-separate border-spacing-y-4">
+                        <thead>
+                           <tr className="text-[8px] font-black text-gray-400 uppercase tracking-[0.2em] italic">
+                              <th className="px-4 pb-2">Concepto</th>
+                              <th className="px-4 pb-2">Categoría</th>
+                              <th className="px-4 pb-2 text-right">Monto (R$)</th>
+                           </tr>
+                        </thead>
+                        <tbody>
+                           {stats.filteredGastos.map(g => (
+                             <tr key={g.id} className="bg-gray-50/50 dark:bg-dark-base/50 group transition-all hover:bg-gold/5 rounded-[2rem]">
+                                <td className="py-5 px-6 rounded-l-[2rem]">
+                                    <p className="text-[11px] font-bold text-bordeaux-950 dark:text-white uppercase tracking-tight">{g.concepto}</p>
+                                    <p className="text-[8px] text-gray-400 mt-1 font-black italic">{g.fecha}</p>
+                                </td>
+                                <td className="py-5 px-4">
+                                    <span className="px-4 py-1.5 bg-white dark:bg-dark-card text-gold rounded-full border border-gold/10 text-[9px] font-black uppercase tracking-widest">{g.categoria}</span>
+                                </td>
+                                <td className="py-5 px-6 text-right rounded-r-[2rem]">
+                                    <p className="text-sm font-robust text-bordeaux-950 dark:text-gold italic">R$ {g.monto.toLocaleString()}</p>
+                                </td>
+                             </tr>
+                           ))}
+                           {stats.filteredGastos.length === 0 && (
+                             <tr>
+                               <td colSpan={3} className="py-20 text-center opacity-30 text-[10px] font-black uppercase tracking-[0.5em] italic">Sin Movimientos</td>
+                             </tr>
+                           )}
+                        </tbody>
+                     </table>
+                  </div>
                </div>
-               <button 
-                  onClick={() => setShowAddExpiration(!showAddExpiration)} 
-                  className="px-8 py-4 bg-bordeaux-950 text-white rounded-[2rem] font-black text-[10px] uppercase tracking-widest shadow-xl flex items-center gap-3"
-               >
-                  <Plus size={16}/> Nueva Alerta
+            </div>
+          </div>
+        )}
+
+        {/* FLOTA SECTION */}
+        {activeTab === 'flota' && (
+          <div className="space-y-10 animate-slideUp">
+             <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-white dark:bg-dark-card p-8 rounded-[3.5rem] shadow-2xl border dark:border-white/5">
+               <div className="relative flex-1 w-full">
+                  <Search className="absolute left-8 top-1/2 -translate-y-1/2 text-gray-300" size={20} />
+                  <input 
+                    type="text" 
+                    placeholder="Filtrar placa, modelo o socio..." 
+                    value={fleetFilter} 
+                    onChange={e => setFleetFilter(e.target.value)}
+                    className="w-full bg-gray-50 dark:bg-dark-base rounded-full pl-20 pr-10 py-6 font-bold text-sm outline-none focus:ring-4 focus:ring-gold/10 transition-all border border-transparent focus:border-gold/20"
+                  />
+               </div>
+               <button className="px-12 py-6 bordeaux-gradient text-white rounded-full text-[10px] font-black uppercase tracking-[0.3em] shadow-xl hover:scale-105 transition-all flex items-center gap-4">
+                 <Plus size={18}/> Unidad JM Platinum
                </button>
             </div>
 
-            {showAddExpiration && (
-               <div className="bg-white dark:bg-dark-card p-8 rounded-[3rem] border-2 border-gold shadow-2xl animate-slideUp">
-                  <h4 className="text-lg font-robust text-bordeaux-950 dark:text-white italic mb-6">Registrar Vencimiento</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                     <select value={newExpiration.vehicleId} onChange={e => setNewExpiration({...newExpiration, vehicleId: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none">
-                        <option value="">Seleccionar Vehículo...</option>
-                        {flota.map(v => <option key={v.id} value={v.id}>{v.nombre}</option>)}
-                     </select>
-                     <select value={newExpiration.tipo} onChange={e => setNewExpiration({...newExpiration, tipo: e.target.value as any})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none">
-                        <option value="Seguro">Póliza de Seguro</option>
-                        <option value="Patente">Habilitación / Patente</option>
-                        <option value="Cuota">Cuota Bancaria / Leasing</option>
-                        <option value="Inspección">Inspección Técnica (IVESUR)</option>
-                     </select>
-                     <input type="date" value={newExpiration.vencimiento} onChange={e => setNewExpiration({...newExpiration, vencimiento: e.target.value})} className="bg-gray-50 dark:bg-dark-base rounded-2xl px-6 py-4 font-bold border-0 outline-none" />
-                     <div className="relative">
-                        <span className="absolute left-6 top-1/2 -translate-y-1/2 font-bold text-gray-400">Gs.</span>
-                        <input type="number" placeholder="Monto" value={newExpiration.monto || ''} onChange={e => setNewExpiration({...newExpiration, monto: Number(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-base rounded-2xl pl-14 pr-6 py-4 font-bold border-0 outline-none" />
-                     </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+              {flota.filter(v => v.nombre.toLowerCase().includes(fleetFilter.toLowerCase()) || v.placa.toLowerCase().includes(fleetFilter.toLowerCase())).map(v => (
+                <div key={v.id} className="bg-white dark:bg-dark-card rounded-[4rem] overflow-hidden border border-gray-100 dark:border-white/5 shadow-xl flex flex-col group hover:shadow-[0_40px_100px_-20px_rgba(0,0,0,0.15)] transition-all">
+                  <div className="relative aspect-video bg-gray-50 dark:bg-dark-base p-10 flex items-center justify-center overflow-hidden">
+                    <img src={v.img} className="w-[85%] h-auto object-contain drop-shadow-2xl transition-transform duration-1000 group-hover:scale-110" alt={v.nombre} />
+                    <div className="absolute top-8 left-8 flex flex-col gap-3">
+                       <span className={`px-5 py-2 rounded-full text-[8px] font-black uppercase tracking-widest shadow-xl ring-4 ring-white/10 ${
+                         v.estado === 'Disponible' ? 'bg-emerald-500 text-white' : v.estado === 'En Taller' ? 'bg-red-500 text-white' : 'bg-amber-500 text-white'
+                       }`}>{v.estado}</span>
+                       <span className="px-5 py-2 bg-white/90 backdrop-blur-md rounded-full text-[8px] font-black text-bordeaux-950 uppercase tracking-widest shadow-xl border border-gold/20">{v.placa}</span>
+                    </div>
+                    <button onClick={() => setEditingVehicle(v)} className="absolute bottom-8 right-8 p-5 bg-bordeaux-950 text-gold rounded-[1.5rem] shadow-2xl ring-2 ring-gold/20 opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100">
+                        <Settings2 size={20}/>
+                    </button>
                   </div>
-                  <button onClick={handleAddExpiration} className="w-full py-4 bg-gray-900 text-white rounded-[2rem] font-black uppercase tracking-widest">Guardar Alerta</button>
-               </div>
+                  <div className="p-10 space-y-6 flex-1 flex flex-col">
+                    <div className="flex justify-between items-start">
+                       <div>
+                         <h4 className="text-3xl font-robust text-bordeaux-950 dark:text-white uppercase italic tracking-tighter leading-none">{v.nombre}</h4>
+                         <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em] mt-3 italic">{v.tipo || 'Luxury Division'}</p>
+                       </div>
+                       <div className="text-right">
+                          <p className="text-[10px] font-black text-gray-400 uppercase italic mb-1">Odómetro</p>
+                          <p className="text-2xl font-robust text-bordeaux-950 dark:text-white italic leading-none">{v.kilometrajeActual.toLocaleString()} <span className="text-xs">KM</span></p>
+                       </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mt-auto pt-6 border-t dark:border-white/5">
+                       <button onClick={() => setEditingVehicle(v)} className="py-5 bg-gray-50 dark:bg-dark-base rounded-[1.8rem] text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-gold/10 transition-all"><Edit3 size={16}/> Editar</button>
+                       <button className="p-5 bg-red-50 dark:bg-red-900/10 text-red-300 rounded-[1.8rem] flex items-center justify-center hover:bg-red-500 hover:text-white transition-all"><Trash2 size={18}/></button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Vehicle Editor Modal */}
+            {editingVehicle && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-dark-base/90 backdrop-blur-xl p-6">
+                    <div className="bg-white dark:bg-dark-card w-full max-w-3xl rounded-[4rem] shadow-2xl border-t-[10px] border-gold p-12 space-y-10 animate-slideUp overflow-y-auto max-h-[90vh]">
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <h3 className="text-4xl font-robust dark:text-white italic tracking-tighter uppercase">Configuración de Unidad</h3>
+                                <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em] italic mt-1">Ref Protocolo: {editingVehicle.id}</p>
+                            </div>
+                            <button onClick={() => setEditingVehicle(null)} className="p-5 bg-gray-100 dark:bg-dark-base rounded-2xl text-gray-400 hover:text-red-500 transition-all shadow-sm"><X size={20}/></button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                            <div className="space-y-8">
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4 italic flex items-center gap-2"><ImageIcon size={14} className="text-gold"/> URL Fotografía</label>
+                                    <input type="text" value={editingVehicle.img} onChange={e => setEditingVehicle({...editingVehicle, img: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-base rounded-3xl px-8 py-5 font-bold text-sm outline-none border border-transparent focus:border-gold/30 shadow-inner" />
+                                </div>
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4 italic flex items-center gap-2"><Car size={14} className="text-gold"/> Denominación Modelo</label>
+                                    <input type="text" value={editingVehicle.nombre} onChange={e => setEditingVehicle({...editingVehicle, nombre: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-base rounded-3xl px-8 py-5 font-bold text-sm outline-none border border-transparent focus:border-gold/30 shadow-inner" />
+                                </div>
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4 italic flex items-center gap-2"><BadgeCheck size={14} className="text-gold"/> Chapa / Matrícula</label>
+                                    <input type="text" value={editingVehicle.placa} onChange={e => setEditingVehicle({...editingVehicle, placa: e.target.value})} className="w-full bg-gray-50 dark:bg-dark-base rounded-3xl px-8 py-5 font-bold text-sm outline-none border border-transparent focus:border-gold/30 shadow-inner" />
+                                </div>
+                            </div>
+                            <div className="space-y-8">
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div className="space-y-3">
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4 italic flex items-center gap-2"><Gauge size={14} className="text-gold"/> Odómetro</label>
+                                        <input type="number" value={editingVehicle.kilometrajeActual} onChange={e => setEditingVehicle({...editingVehicle, kilometrajeActual: parseInt(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-base rounded-3xl px-6 py-5 font-bold text-sm outline-none border border-transparent focus:border-gold/30 shadow-inner" />
+                                    </div>
+                                    <div className="space-y-3">
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4 italic flex items-center gap-2"><Wrench size={14} className="text-gold"/> Próx. Service</label>
+                                        <input type="number" value={editingVehicle.mantenimientoKM || 0} onChange={e => setEditingVehicle({...editingVehicle, mantenimientoKM: parseInt(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-base rounded-3xl px-6 py-5 font-bold text-sm outline-none border border-transparent focus:border-gold/30 shadow-inner" />
+                                    </div>
+                                </div>
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4 italic flex items-center gap-2"><TrendingUp size={14} className="text-gold"/> Arancel Diario (R$)</label>
+                                    <input type="number" value={editingVehicle.precio} onChange={e => setEditingVehicle({...editingVehicle, precio: parseFloat(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-base rounded-3xl px-8 py-5 font-bold text-sm outline-none border border-transparent focus:border-gold/30 shadow-inner" />
+                                </div>
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4 italic flex items-center gap-2"><Activity size={14} className="text-gold"/> Estado Operacional</label>
+                                    <select value={editingVehicle.estado} onChange={e => setEditingVehicle({...editingVehicle, estado: e.target.value as any})} className="w-full bg-gray-50 dark:bg-dark-base rounded-3xl px-8 py-5 font-bold text-sm outline-none border border-transparent focus:border-gold/30 shadow-inner">
+                                        <option value="Disponible">Disponible</option>
+                                        <option value="En Alquiler">En Alquiler</option>
+                                        <option value="En Taller">En Taller</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4 italic flex items-center gap-2"><Layers size={14} className="text-gold"/> Especificaciones (Separar por comas)</label>
+                            <textarea value={editingVehicle.specs.join(', ')} onChange={e => setEditingVehicle({...editingVehicle, specs: e.target.value.split(',').map(s => s.trim())})} className="w-full bg-gray-50 dark:bg-dark-base rounded-[2.5rem] px-8 py-6 font-bold text-sm outline-none border border-transparent focus:border-gold/30 shadow-inner min-h-[120px]" />
+                        </div>
+
+                        <div className="flex gap-8 pt-10">
+                            <button onClick={() => saveVehicleChanges(editingVehicle)} className="flex-1 bordeaux-gradient text-white py-7 rounded-full font-robust text-[12px] uppercase tracking-[0.4em] shadow-2xl hover:scale-[1.03] transition-all flex items-center justify-center gap-4 group">
+                                <Save size={20} className="group-hover:animate-bounce"/> Validar y Guardar Cambios
+                            </button>
+                            <button onClick={() => setEditingVehicle(null)} className="px-12 bg-gray-100 dark:bg-dark-elevated text-gray-400 rounded-full font-black text-[10px] uppercase tracking-widest hover:text-bordeaux-800 transition-colors">Descartar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+          </div>
+        )}
+
+        {/* INSPECCIONES SECTION - Fixed Blank View */}
+        {activeTab === 'inspecciones' && (
+          <div className="space-y-12 animate-slideUp">
+             <div className="bg-white dark:bg-dark-card rounded-[4rem] border dark:border-white/5 shadow-2xl overflow-hidden">
+                <div className="p-12 border-b dark:border-white/5 bg-gray-50/50 flex flex-col md:flex-row justify-between items-center gap-8">
+                   <div>
+                      <h3 className="text-4xl font-robust dark:text-white uppercase italic tracking-tight">Registro de Inspecciones</h3>
+                      <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest italic mt-2">Protocolos de Recepción y Entrega Platinum</p>
+                   </div>
+                   <button className="px-12 py-5 bordeaux-gradient text-white rounded-full text-[10px] font-black uppercase tracking-[0.3em] shadow-xl flex items-center gap-4 hover:scale-105 transition-all"><Plus size={18}/> Nuevo Protocolo</button>
+                </div>
+                
+                <div className="p-12 space-y-12">
+                   {checklists.length > 0 ? checklists.map(log => (
+                      <div key={log.id} className="bg-gray-50 dark:bg-dark-base rounded-[3.5rem] border border-gray-100 dark:border-white/5 p-12 space-y-10 shadow-inner">
+                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                            <div className="flex items-center gap-6">
+                               <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center text-white shadow-2xl ${log.tipo === 'Check-Out' ? 'bg-bordeaux-800' : 'bg-emerald-600'}`}>
+                                  {log.tipo === 'Check-Out' ? <ArrowUpRight size={36}/> : <ArrowDownLeft size={36}/>}
+                               </div>
+                               <div>
+                                  <h4 className="text-3xl font-robust text-bordeaux-950 dark:text-white uppercase italic leading-none">{log.tipo} Protocolo</h4>
+                                  <p className="text-[10px] font-black text-gold uppercase tracking-[0.3em] mt-3 italic flex items-center gap-2"><Calendar size={12}/> {log.fecha}</p>
+                               </div>
+                            </div>
+                            <div className="text-right">
+                               <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 italic">Responsable</p>
+                               <p className="text-base font-black text-bordeaux-950 dark:text-white uppercase tracking-tighter">{log.responsable}</p>
+                               <div className="flex items-center gap-3 mt-4 bg-white dark:bg-dark-card px-4 py-2 rounded-full border border-gray-100 dark:border-white/5 shadow-sm">
+                                  <Gauge size={14} className="text-gold" />
+                                  <span className="text-[10px] font-bold text-gray-500 uppercase italic">{log.kilometraje.toLocaleString()} KM</span>
+                               </div>
+                            </div>
+                         </div>
+
+                         <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                            {(['exterior', 'interior', 'mecanica'] as const).map(cat => (
+                               <div key={cat} className="bg-white dark:bg-dark-card p-8 rounded-[3rem] shadow-sm border border-gray-100 dark:border-white/5">
+                                  <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em] mb-6 border-b border-gold/10 pb-2 italic">{cat}</p>
+                                  <div className="space-y-4">
+                                     {log[cat].map((item, idx) => (
+                                        <div key={idx} className="flex items-center justify-between group/item">
+                                           <span className="text-[11px] font-bold text-gray-500 uppercase tracking-tight">{item.label}</span>
+                                           <div className="flex gap-2">
+                                              {(['ok', 'bad', 'na'] as const).map(st => (
+                                                <button 
+                                                  key={st}
+                                                  onClick={() => updateInspectionItem(log.id, cat, idx, { status: st })}
+                                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                                                    item.status === st 
+                                                      ? st === 'ok' ? 'bg-emerald-500 text-white shadow-lg' : st === 'bad' ? 'bg-red-500 text-white shadow-lg' : 'bg-gray-400 text-white shadow-lg'
+                                                      : 'bg-gray-100 dark:bg-dark-base text-gray-300 hover:text-gold'
+                                                  }`}
+                                                >
+                                                  {st === 'ok' ? <Check size={14}/> : st === 'bad' ? <X size={14}/> : <Info size={14}/>}
+                                                </button>
+                                              ))}
+                                           </div>
+                                        </div>
+                                     ))}
+                                  </div>
+                               </div>
+                            ))}
+                         </div>
+                         <div className="bg-white dark:bg-dark-card p-10 rounded-[3rem] border border-gray-100 dark:border-white/5 flex items-start gap-8 shadow-sm">
+                             <div className="p-4 bg-gold/10 rounded-2xl text-gold shadow-sm"><Activity size={28}/></div>
+                             <div className="flex-1">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 italic">Análisis Global & Observaciones</p>
+                                <textarea 
+                                  value={log.observacionesGlobales}
+                                  onChange={(e) => setChecklists(checklists.map(cl => cl.id === log.id ? { ...cl, observacionesGlobales: e.target.value } : cl))}
+                                  className="w-full bg-gray-50 dark:bg-dark-base p-6 rounded-3xl text-[11px] text-gray-600 italic font-medium leading-relaxed border-transparent focus:border-gold/30 outline-none transition-all"
+                                  placeholder="Ingresar hallazgos del protocolo..."
+                                />
+                             </div>
+                             <div className="flex flex-col gap-4">
+                                <button className="p-5 bg-gray-50 dark:bg-dark-base text-gray-400 hover:text-gold rounded-3xl transition-all shadow-sm"><Edit3 size={20}/></button>
+                                <button className="p-5 bg-gray-50 dark:bg-dark-base text-gray-400 hover:text-red-500 rounded-3xl transition-all shadow-sm"><Trash2 size={20}/></button>
+                             </div>
+                         </div>
+                      </div>
+                   )) : (
+                     <div className="py-40 text-center opacity-30 flex flex-col items-center">
+                        <History size={80} className="mb-6" strokeWidth={1}/>
+                        <p className="text-2xl font-robust italic uppercase tracking-widest">Sin Protocolos Digitales</p>
+                     </div>
+                   )}
+                </div>
+             </div>
+          </div>
+        )}
+
+        {/* TALLER SECTION */}
+        {activeTab === 'taller' && (
+          <div className="space-y-12 animate-slideUp">
+            <div className="flex justify-between items-center bg-white dark:bg-dark-card p-8 rounded-[3.5rem] shadow-xl border dark:border-white/5">
+                <div>
+                  <h3 className="text-3xl font-robust dark:text-white uppercase italic tracking-tight">Mantenimiento Predictivo</h3>
+                  <p className="text-[10px] font-black text-gold uppercase tracking-[0.4em] italic mt-1">Alertas según Protocolo JM</p>
+                </div>
+                <div className="flex gap-6">
+                    <button onClick={() => setShowThresholdConfig(!showThresholdConfig)} className="px-10 py-5 bg-gray-50 dark:bg-dark-base border-2 border-gold/20 text-gold rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-4 hover:bg-gold/5 transition-all">
+                        <Settings2 size={18}/> Umbrales JM
+                    </button>
+                    <button className="px-12 py-5 bordeaux-gradient text-white rounded-full text-[10px] font-black uppercase tracking-[0.3em] shadow-xl hover:scale-105 transition-all flex items-center gap-4">
+                        <Plus size={18}/> Nueva Intervención
+                    </button>
+                </div>
+            </div>
+
+            {showThresholdConfig && (
+                <div className="bg-white dark:bg-dark-card p-10 rounded-[3.5rem] border-2 border-gold/30 shadow-2xl animate-slideUp grid grid-cols-1 md:grid-cols-2 gap-10">
+                    <div className="space-y-4">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4 italic">Alerta de Service (KM antes)</label>
+                        <input type="number" value={thresholds.kmThreshold} onChange={e => setThresholds({...thresholds, kmThreshold: parseInt(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-base rounded-3xl px-8 py-5 font-black text-sm outline-none border border-transparent focus:border-gold/30 shadow-inner" />
+                        <p className="text-[8px] text-gray-400 italic ml-4">El sistema alertará cuando falten menos de estos KM para el service programado.</p>
+                    </div>
+                    <div className="space-y-4">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4 italic">Alerta de Tributo (Días antes)</label>
+                        <input type="number" value={thresholds.daysThreshold} onChange={e => setThresholds({...thresholds, daysThreshold: parseInt(e.target.value)})} className="w-full bg-gray-50 dark:bg-dark-base rounded-3xl px-8 py-5 font-black text-sm outline-none border border-transparent focus:border-gold/30 shadow-inner" />
+                        <p className="text-[8px] text-gray-400 italic ml-4">Notificación prioritaria para seguros, patentes y cuotas bancarias.</p>
+                    </div>
+                </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-               {vencimientos.sort((a,b) => new Date(a.vencimiento).getTime() - new Date(b.vencimiento).getTime()).map(v => {
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+              {flota.map(v => {
+                const kmRemaining = v.mantenimientoKM ? (v.mantenimientoKM - v.kilometrajeActual) : null;
+                const isWarning = kmRemaining !== null && kmRemaining < thresholds.kmThreshold;
+                const isCritical = kmRemaining !== null && kmRemaining < 200;
+
+                return (
+                  <div key={v.id} className={`bg-white dark:bg-dark-card rounded-[4rem] overflow-hidden border-2 transition-all duration-500 shadow-xl flex flex-col group ${
+                    isCritical ? 'border-red-600 shadow-red-100 ring-8 ring-red-500/5' : isWarning ? 'border-amber-400 shadow-amber-100 ring-8 ring-amber-400/5' : 'border-gray-100 dark:border-white/5'
+                  }`}>
+                    <div className="relative aspect-video bg-gray-50 dark:bg-dark-base p-10 flex items-center justify-center overflow-hidden">
+                      <img src={v.img} className="w-[85%] h-auto object-contain drop-shadow-2xl transition-transform duration-700 group-hover:scale-105" alt="" />
+                      {isWarning && (
+                        <div className="absolute top-6 right-6 bg-red-600 text-white px-5 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-2xl animate-pulse flex items-center gap-2">
+                           <AlertCircle size={10} /> {isCritical ? 'MANTENIMIENTO CRÍTICO' : 'ATENCIÓN REQUERIDA'}
+                        </div>
+                      )}
+                      <div className="absolute top-6 left-6 flex flex-col gap-2">
+                         <span className="px-5 py-2 bg-white/90 backdrop-blur-md rounded-full text-[9px] font-black text-bordeaux-950 uppercase tracking-widest shadow-lg border border-gold/10">{v.placa}</span>
+                      </div>
+                    </div>
+                    <div className="p-10 space-y-8 flex-1 flex flex-col">
+                       <h4 className="text-3xl font-robust text-bordeaux-950 dark:text-white uppercase italic tracking-tighter leading-none">{v.nombre}</h4>
+                       
+                       <div className="bg-gray-50 dark:bg-dark-base p-8 rounded-[2.5rem] space-y-6 shadow-inner border border-gray-100 dark:border-white/5">
+                          <div className="flex justify-between items-center">
+                             <p className="text-[10px] font-black text-gray-400 uppercase italic tracking-widest">Odómetro</p>
+                             <p className="text-xl font-robust text-bordeaux-950 dark:text-white italic">{v.kilometrajeActual.toLocaleString()} KM</p>
+                          </div>
+                          <div className="flex justify-between items-center border-t border-gray-200 dark:border-white/10 pt-4">
+                             <p className="text-[10px] font-black text-gray-400 uppercase italic tracking-widest">Próx. Service</p>
+                             <p className={`text-xl font-robust italic ${isWarning ? 'text-red-600' : 'text-emerald-600'}`}>{v.mantenimientoKM?.toLocaleString() || '---'} KM</p>
+                          </div>
+                       </div>
+                       
+                       {kmRemaining !== null && (
+                         <div className="space-y-3">
+                            <div className="flex justify-between text-[9px] font-black text-gray-400 uppercase tracking-widest px-2">
+                                <span>Ciclo de Vida Aceite</span>
+                                <span className={isWarning ? 'text-red-600' : 'text-emerald-600'}>{kmRemaining.toLocaleString()} KM RESTANTES</span>
+                            </div>
+                            <div className="w-full h-3 bg-gray-100 dark:bg-dark-base rounded-full overflow-hidden shadow-inner">
+                                <div 
+                                    className={`h-full transition-all duration-1000 ${isCritical ? 'bg-red-600' : isWarning ? 'bg-amber-500' : 'bg-emerald-500'}`} 
+                                    style={{ width: `${Math.max(0, Math.min(100, (kmRemaining / 10000) * 100))}%` }}
+                                ></div>
+                            </div>
+                         </div>
+                       )}
+
+                       <button onClick={() => toggleVehicleStatus(v.id)} className="w-full py-6 bordeaux-gradient text-white rounded-[2.5rem] font-black text-[11px] uppercase tracking-[0.4em] shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-4 group/btn">
+                          <Zap size={18} className="group-hover/btn:animate-pulse" /> Ingresar a Taller Maestro
+                       </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* VENCIMIENTOS SECTION - Styled Professional Alerts */}
+        {activeTab === 'vencimientos' && (
+          <div className="animate-slideUp space-y-12">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-white dark:bg-dark-card p-10 rounded-[4.5rem] shadow-xl border dark:border-white/5">
+                <div className="flex items-center gap-6">
+                    <div className="p-4 bg-gold/10 rounded-3xl text-gold shadow-sm"><Banknote size={32}/></div>
+                    <div>
+                        <h3 className="text-4xl font-robust dark:text-white uppercase italic tracking-tight">Vencimientos & Tributos</h3>
+                        <p className="text-[11px] font-black text-gold uppercase tracking-[0.4em] italic mt-1">Control de Impuestos y Seguros Platinum</p>
+                    </div>
+                </div>
+                <div className="flex gap-6">
+                    <div className="bg-gray-50 dark:bg-dark-base px-8 py-5 rounded-3xl border border-gray-100 dark:border-white/5 text-center shadow-inner">
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Cargos Pendientes</p>
+                        <p className="text-2xl font-robust text-bordeaux-800 italic">{vencimientos.filter(v => !v.pagado).length}</p>
+                    </div>
+                    <button className="px-12 py-5 bordeaux-gradient text-white rounded-full text-[11px] font-black uppercase tracking-widest shadow-2xl hover:scale-105 transition-all flex items-center gap-4"><Plus size={18}/> Nuevo Tributo</button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+                {vencimientos.map(v => {
                   const daysLeft = Math.ceil((new Date(v.vencimiento).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-                  const isExpired = daysLeft < 0;
-                  const isUrgent = daysLeft <= 7;
-                  const statusColor = v.pagado ? 'bg-green-500' : isExpired ? 'bg-red-500' : isUrgent ? 'bg-orange-500' : 'bg-blue-500';
+                  const isSoon = !v.pagado && daysLeft < thresholds.daysThreshold;
 
                   return (
-                     <div key={v.id} className="relative bg-white dark:bg-dark-card rounded-[2.5rem] p-8 shadow-lg border border-gray-100 dark:border-white/5 overflow-hidden group hover:scale-[1.02] transition-transform">
-                        <div className={`absolute top-0 left-0 w-2 h-full ${statusColor}`}></div>
+                    <div key={v.id} className={`bg-white dark:bg-dark-card p-12 rounded-[5rem] border shadow-2xl relative overflow-hidden transition-all duration-700 group flex flex-col ${
+                        v.pagado ? 'opacity-50 border-emerald-100 grayscale-[0.3]' : isSoon ? 'border-red-100 shadow-red-100/30' : 'border-gray-50 dark:border-white/5 hover:border-gold/30'
+                    }`}>
+                        {v.pagado && <div className="absolute top-[-15%] right-[-15%] w-40 h-40 bg-emerald-500/10 rounded-full blur-[60px]"></div>}
                         
-                        <div className="flex justify-between items-start mb-6">
-                           <div className="bg-gray-50 dark:bg-dark-base p-3 rounded-2xl">
-                              {v.tipo === 'Seguro' ? <ShieldCheck className="text-gray-400"/> : v.tipo === 'Cuota' ? <Wallet className="text-gray-400"/> : <CalendarDays className="text-gray-400"/>}
-                           </div>
-                           <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase text-white ${statusColor}`}>
-                              {v.pagado ? 'PAGADO' : isExpired ? 'VENCIDO' : `${daysLeft} Días`}
-                           </span>
-                        </div>
-
-                        <h4 className="text-lg font-robust text-bordeaux-950 dark:text-white leading-none mb-1">{v.vehicleName}</h4>
-                        <p className="text-[10px] font-black text-gold uppercase tracking-widest mb-4">{v.tipo}</p>
-
-                        <div className="flex items-end justify-between border-t border-gray-100 dark:border-white/5 pt-4">
-                           <div>
-                              <p className="text-[9px] text-gray-400 font-bold uppercase">Vencimiento</p>
-                              <p className="text-sm font-bold text-gray-800 dark:text-gray-200">{new Date(v.vencimiento).toLocaleDateString()}</p>
+                        <div className="flex justify-between items-start mb-12">
+                           <div className={`px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-lg flex items-center gap-3 ${
+                             v.pagado ? 'bg-emerald-500 text-white' : isSoon ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-900 text-white'
+                           }`}>
+                             {v.pagado ? <CheckCircle size={14}/> : isSoon ? <AlertCircle size={14}/> : <History size={14}/>}
+                             {v.pagado ? 'Liquidado' : isSoon ? 'Vencimiento Próximo' : 'En Fecha'}
                            </div>
                            <div className="text-right">
-                              <p className="text-[9px] text-gray-400 font-bold uppercase">Monto</p>
-                              <p className="text-sm font-black text-bordeaux-800">Gs. {v.monto.toLocaleString()}</p>
+                              <p className="text-[9px] font-black text-gray-400 uppercase italic mb-1">Fecha Límite</p>
+                              <p className="text-sm font-robust text-bordeaux-950 dark:text-white italic tracking-tighter">{v.vencimiento}</p>
                            </div>
                         </div>
+                        
+                        <div className="space-y-3 mb-12">
+                            <h4 className="text-3xl font-robust text-bordeaux-950 dark:text-white italic uppercase tracking-tighter leading-none group-hover:text-gold transition-colors">{v.vehicleName}</h4>
+                            <div className="flex items-center gap-4">
+                               <div className="h-[2px] w-8 bg-gold/50"></div>
+                               <p className="text-[12px] font-black text-gold uppercase tracking-[0.4em] italic">{v.tipo}</p>
+                            </div>
+                            {v.referencia && <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-2">Ref: {v.referencia}</p>}
+                        </div>
 
-                        {!v.pagado && (
-                           <button 
-                              onClick={() => setVencimientos(vencimientos.map(r => r.id === v.id ? {...r, pagado: true} : r))}
-                              className="w-full mt-6 py-3 bg-gray-100 dark:bg-dark-elevated text-gray-500 dark:text-gray-300 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-green-500 hover:text-white transition-colors"
-                           >
-                              Marcar como Pagado
-                           </button>
-                        )}
-                     </div>
+                        <div className="mt-auto pt-10 border-t dark:border-white/5 flex items-center justify-between">
+                           <div>
+                              <p className="text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest italic">Monto de Tributo</p>
+                              <p className="text-4xl font-robust text-bordeaux-950 dark:text-white italic tracking-tighter leading-none">R$ {v.monto.toLocaleString()}</p>
+                           </div>
+                           {!v.pagado && (
+                             <button onClick={() => markVencimientoPagado(v.id)} className="p-7 bordeaux-gradient text-white rounded-[2.5rem] shadow-2xl hover:scale-110 active:scale-90 transition-all ring-8 ring-gold/5 group/pay">
+                                <Check size={32} strokeWidth={4} className="group-hover/pay:rotate-12 transition-transform" />
+                             </button>
+                           )}
+                        </div>
+                    </div>
                   );
-               })}
-               {vencimientos.length === 0 && (
-                  <div className="col-span-full py-12 text-center text-gray-400 text-xs italic bg-gray-50 dark:bg-dark-elevated rounded-[3rem]">
-                     No hay vencimientos pendientes.
-                  </div>
-               )}
+                })}
             </div>
-         </div>
-      )}
+          </div>
+        )}
 
-      {/* AI STUDIO - Hidden for now as requested focus was Inspections/Expirations */}
-      {/* ... */}
+        {/* Tab Placeholder for Unimplemented/Generic Modules */}
+        {(activeTab === 'contratos') && (
+          <div className="animate-slideUp py-40 text-center space-y-10 opacity-30 flex flex-col items-center">
+             <div className="p-10 bg-gray-50 dark:bg-dark-elevated rounded-[4rem] shadow-inner">
+                <History size={100} strokeWidth={0.5} />
+             </div>
+             <div className="space-y-4">
+                <p className="text-3xl font-robust italic uppercase tracking-[0.5em]">Módulo Platinum {activeTab}</p>
+                <p className="text-[12px] font-black text-gold uppercase tracking-[0.3em] italic">Sincronización de Base de Datos Maestro 2026</p>
+             </div>
+          </div>
+        )}
+
+      </div>
     </div>
   );
 };

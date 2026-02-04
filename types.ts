@@ -14,18 +14,16 @@ export interface InspectionItem {
 
 export interface ChecklistLog {
   id: string;
+  vehicleId: string;
   tipo: 'Check-In' | 'Check-Out';
   fecha: string;
   responsable: string;
   kilometraje: number;
   combustible: '1/8' | '1/4' | '1/2' | '3/4' | 'Full';
-  // Categorías profesionales
   exterior: InspectionItem[];
   interior: InspectionItem[];
   mecanica: InspectionItem[];
-  documentacion: InspectionItem[];
   observacionesGlobales: string;
-  firmado: boolean;
 }
 
 export interface MaintenanceRecord {
@@ -37,11 +35,14 @@ export interface MaintenanceRecord {
   descripcion: string;
   monto: number;
   tipo: 'Preventivo' | 'Correctivo' | 'Lavado' | 'Otro';
-  // Campos para alertas
-  vencimientoFecha?: string;
   vencimientoKM?: number;
+  vencimientoFecha?: string; // Añadido para seguimiento por fecha
   realizado: boolean;
-  images?: string[]; // Added for photos
+}
+
+export interface MaintenanceThresholds {
+  kmThreshold: number;
+  daysThreshold: number;
 }
 
 export interface ExpirationRecord {
@@ -64,16 +65,12 @@ export interface Vehicle {
   placa: string;
   color: string;
   specs: string[];
-  kilometrajeActual: number; // Obligatorio ahora para cálculos
+  kilometrajeActual: number;
   mantenimientoKM?: number;
-  checklists?: ChecklistLog[];
   transmision?: string;
   combustible?: string;
   asientos?: number;
   tipo?: string;
-  lastLat?: number;
-  lastLng?: number;
-  // Propiedad calculada para alertas de UI
   maintenanceStatus?: 'ok' | 'warning' | 'critical';
   maintenanceKMLeft?: number;
   maintenanceDaysLeft?: number;
@@ -96,8 +93,6 @@ export interface Reservation {
   signature?: string;
   includeInCalendar?: boolean;
   contractAccepted?: boolean;
-  obs?: string; // Nuevo campo para notas de cambios
-  contractUrl?: string; // URL o Base64 del contrato subido manualmente
 }
 
 export interface Gasto {

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>JM Alquiler de Vehículos | Premium Fleet</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -47,6 +47,7 @@
                     },
                     fontFamily: {
                         sans: ['"Archivo"', 'sans-serif'],
+                        serif: ['"Playfair Display"', 'serif'],
                     },
                 }
             }
@@ -75,52 +76,63 @@
             background-repeat: no-repeat;
             background-position: center;
             background-size: contain;
-            opacity: 0.03;
+            opacity: 0.02;
             pointer-events: none;
             z-index: -1;
         }
         .dark .watermark-bg {
-            opacity: 0.05;
+            opacity: 0.04;
             filter: brightness(0) invert(1);
         }
 
-        .font-robust { font-weight: 900; text-transform: uppercase; letter-spacing: -0.02em; }
-        .font-speed { font-style: italic; }
-
-        .bordeaux-gradient { background: linear-gradient(135deg, #800000 0%, #3a0b0b 100%); }
+        /* Tipografías Especializadas */
+        .font-robust { font-family: "Archivo", sans-serif; font-weight: 900; text-transform: uppercase; letter-spacing: -0.04em; }
+        .font-elegant { font-family: "Playfair Display", serif; font-weight: 700; font-style: italic; }
+        .font-brand { font-family: "Archivo", sans-serif; font-weight: 900; font-style: italic; text-transform: uppercase; }
         
-        @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        .animate-slideUp { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .tracking-ultra { letter-spacing: 0.6em; }
+        .tracking-wide-label { letter-spacing: 0.3em; font-weight: 900; text-transform: uppercase; font-size: 0.65rem; }
 
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        .bordeaux-gradient { background: linear-gradient(135deg, #800000 0%, #4a0606 100%); }
+        .gold-glow { box-shadow: 0 0 20px rgba(212, 175, 55, 0.15); }
+        
+        @keyframes slideUp { from { transform: translateY(15px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .animate-slideUp { animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        .dark ::-webkit-scrollbar-track { background: #0a0101; }
         ::-webkit-scrollbar-thumb { background: #800000; border-radius: 10px; }
         .dark ::-webkit-scrollbar-thumb { background: #D4AF37; }
 
-        .compact-table th { font-weight: 900; text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.05em; }
-        .compact-table td { font-size: 0.8rem; vertical-align: middle; padding: 0.5rem 1rem; }
-        
-        .calendar-day-occupied { background-color: #fce7e7 !important; color: #b91c1c !important; font-weight: 800; }
-        .dark .calendar-day-occupied { background-color: #3a0b0b !important; color: #ef4444 !important; }
+        /* Glassmorphism Refinado */
+        .glass-dark {
+            background: rgba(18, 4, 4, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .text-gradient-gold {
+            background: linear-gradient(to right, #D4AF37, #f5edd7, #D4AF37);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "recharts": "https://esm.sh/recharts@^3.7.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3",
     "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "@google/genai": "https://esm.sh/@google/genai@^1.38.0"
+    "recharts": "https://esm.sh/recharts@^3.7.0",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0"
   }
 }
 </script>
 </head>
 <body class="bg-gray-50 text-gray-950 dark:bg-dark-base dark:text-gray-100 overflow-x-hidden">
-    <!-- Elemento de Marca de Agua -->
     <div class="watermark-bg"></div>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>

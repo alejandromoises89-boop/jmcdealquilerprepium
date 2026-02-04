@@ -4,8 +4,11 @@ import { Vehicle, Reservation } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
 import { 
   CheckCircle2, Clock, Info, Calendar, 
-  ShieldAlert, Settings2, Users, Fuel, Gauge, Zap,
-  Cpu, Award, ShieldCheck, AlertTriangle, AlertCircle, Calculator, Wrench
+  Users, Fuel, Gauge, Award, ShieldCheck, 
+  Wrench, Calculator, Zap,
+  Smartphone, ChevronRight,
+  Layers, Star, Activity, Heart, MapPin, Box,
+  Key, AlertCircle, Settings2, Milestones
 } from 'lucide-react';
 import AvailabilityCalendar from './AvailabilityCalendar';
 
@@ -18,224 +21,204 @@ interface VehicleCardProps {
   language?: Language;
 }
 
-const VehicleCard: React.FC<VehicleCardProps> = ({ vehicle, exchangeRate, reservations, onSelect, isAdmin, language = 'es' }) => {
+const VehicleCard: React.FC<VehicleCardProps> = ({ vehicle, exchangeRate, reservations, onSelect, language = 'es' }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showAvailability, setShowAvailability] = useState(false);
   
-  // Calculator State
   const [calcStart, setCalcStart] = useState('');
   const [calcEnd, setCalcEnd] = useState('');
 
-  const t = TRANSLATIONS[language];
   const isAvailable = vehicle.estado === 'Disponible';
-  const isRented = vehicle.estado === 'En Alquiler';
   const pricePYG = Math.round(vehicle.precio * exchangeRate);
-  
-  const getStatusStyle = () => {
-    if (isAvailable) return {
-      badge: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30',
-      icon: CheckCircle2,
-      label: 'Disponible'
-    };
-    if (isRented) return {
-      badge: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30',
-      icon: Clock,
-      label: 'En Alquiler'
-    };
-    return {
-      badge: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/30',
-      icon: Wrench,
-      label: 'En Taller'
-    };
-  };
 
-  const statusStyle = getStatusStyle();
-  const StatusIcon = statusStyle.icon;
+  const statusConfig = useMemo(() => {
+    switch (vehicle.estado) {
+      case 'Disponible':
+        return {
+          color: 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20 shadow-emerald-100/20',
+          icon: <CheckCircle2 size={12} className="animate-pulse" />,
+          label: 'Disponible'
+        };
+      case 'En Alquiler':
+        return {
+          color: 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/20 shadow-amber-100/20',
+          icon: <Clock size={12} />,
+          label: 'En Alquiler'
+        };
+      case 'En Taller':
+        return {
+          color: 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border-red-100 dark:border-red-500/20 shadow-red-100/20',
+          icon: <AlertCircle size={12} />,
+          label: 'En Taller'
+        };
+      default:
+        return {
+          color: 'bg-gray-50 text-gray-600 border-gray-100',
+          icon: <Info size={12} />,
+          label: vehicle.estado
+        };
+    }
+  }, [vehicle.estado]);
 
   const estimatedCost = useMemo(() => {
     if (!calcStart || !calcEnd) return null;
     const s = new Date(calcStart);
     const e = new Date(calcEnd);
-    const diffTime = Math.abs(e.getTime() - s.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
-    if (diffDays < 1) return null;
-    
-    const totalBRL = diffDays * vehicle.precio;
-    const totalPYG = totalBRL * exchangeRate;
-    return { days: diffDays, brl: totalBRL, pyg: totalPYG };
+    if (isNaN(s.getTime()) || isNaN(e.getTime())) return null;
+    const diffTime = e.getTime() - s.getTime();
+    const diffDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    return { days: diffDays, brl: diffDays * vehicle.precio, pyg: diffDays * vehicle.precio * exchangeRate };
   }, [calcStart, calcEnd, vehicle.precio, exchangeRate]);
+
+  const technicalSpecs = useMemo(() => [
+    { icon: Gauge, label: 'Motorización', val: vehicle.specs[0] || 'Eficiencia VVT-i' },
+    { icon: Box, label: 'Transmisión', val: vehicle.transmision || 'Automática' },
+    { icon: Fuel, label: 'Combustible', val: vehicle.combustible || 'Nafta' },
+    { icon: Users, label: 'Capacidad', val: `${vehicle.asientos || 5} Plazas` },
+    { icon: ShieldCheck, label: 'Seguridad', val: 'Protocolo JM' },
+    { icon: Award, label: 'Categoría', val: vehicle.tipo || 'Premium' }
+  ], [vehicle]);
 
   return (
     <div 
-      className={`group relative bg-white dark:bg-dark-card rounded-[3.8rem] overflow-hidden transition-all duration-700 cursor-pointer border-2 ${
-        isHovered ? 'border-gold shadow-[0_40px_100px_-20px_rgba(0,0,0,0.15)] scale-[1.01]' : 'border-gray-100 dark:border-white/5 shadow-2xl'
+      className={`group relative bg-white dark:bg-dark-card rounded-[4rem] overflow-hidden transition-all duration-700 cursor-pointer border-2 ${
+        isHovered ? 'border-gold gold-glow scale-[1.01]' : 'border-gray-100 dark:border-white/5'
       }`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={() => isAvailable && onSelect()}
     >
-      {/* IMAGEN PRINCIPAL */}
-      <div className="relative aspect-[16/10] overflow-hidden bg-gray-50 dark:bg-dark-base flex items-center justify-center p-8">
-        <img src={vehicle.img} className="w-full h-full object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.2)] transition-transform duration-1000 group-hover:scale-110" alt={vehicle.nombre} />
-        
-        {/* Badge de Estado Superior */}
-        <div className="absolute top-8 left-8 z-30 flex flex-col gap-2">
-          <div className={`px-5 py-2 rounded-2xl text-[9px] font-robust border backdrop-blur-md flex items-center gap-3 uppercase tracking-[0.2em] shadow-xl ${statusStyle.badge}`}>
-            <StatusIcon size={14} className="animate-pulse" />
-            {statusStyle.label}
+      <div className="relative aspect-[16/9] bg-gray-50 dark:bg-dark-base flex items-center justify-center p-12 overflow-hidden">
+        <img src={vehicle.img} className="w-[90%] h-auto object-contain drop-shadow-[0_30px_60px_rgba(0,0,0,0.2)] transition-transform duration-1000 group-hover:scale-105" alt={vehicle.nombre} />
+        <div className="absolute top-10 left-10 z-30">
+          <div className={`px-6 py-2.5 rounded-full tracking-wide-label border backdrop-blur-md flex items-center gap-3 shadow-lg transition-all duration-500 ${statusConfig.color}`}>
+            {statusConfig.icon} {statusConfig.label}
           </div>
-          
-          {/* Mantenimiento Alert Badge - Improved Visibility */}
-          {vehicle.maintenanceStatus === 'critical' && (
-             <div className="px-5 py-2 rounded-2xl text-[9px] font-robust border bg-red-600 text-white border-red-500 backdrop-blur-md flex items-center gap-3 uppercase tracking-[0.2em] shadow-xl animate-pulse">
-                <AlertTriangle size={14} className="fill-white/20" /> 
-                <span>
-                  {vehicle.maintenanceKMLeft !== undefined && vehicle.maintenanceKMLeft <= 300 ? `${vehicle.maintenanceKMLeft} KM RESTANTES` : 
-                   vehicle.maintenanceDaysLeft !== undefined && vehicle.maintenanceDaysLeft <= 5 ? `${vehicle.maintenanceDaysLeft} DÍAS RESTANTES` : "MANT. URGENTE"}
-                </span>
-             </div>
-          )}
-          {vehicle.maintenanceStatus === 'warning' && (
-             <div className="px-5 py-2 rounded-2xl text-[9px] font-robust border bg-gold text-white border-yellow-500 backdrop-blur-md flex items-center gap-3 uppercase tracking-[0.2em] shadow-xl">
-                <AlertCircle size={14} className="fill-white/20" />
-                <span>
-                  {vehicle.maintenanceKMLeft !== undefined && vehicle.maintenanceKMLeft <= 1000 ? `${vehicle.maintenanceKMLeft} KM PRÓXIMOS` : 
-                   vehicle.maintenanceDaysLeft !== undefined && vehicle.maintenanceDaysLeft <= 15 ? `${vehicle.maintenanceDaysLeft} DÍAS PRÓXIMOS` : "MANT. PRÓXIMO"}
-                </span>
-             </div>
-          )}
-        </div>
-
-        {/* Marca de Agua Gold */}
-        <div className="absolute bottom-6 right-8 opacity-20 group-hover:opacity-100 transition-opacity">
-           <Award size={60} className="text-gold" strokeWidth={1} />
         </div>
       </div>
 
-      <div className="p-10 space-y-8">
-        {/* TÍTULO Y PRECIO */}
-        <div className="flex justify-between items-end">
-          <div className="space-y-2">
-            <h3 className="text-3xl font-robust text-bordeaux-950 dark:text-white uppercase italic leading-none tracking-tighter">{vehicle.nombre}</h3>
-            <div className="flex items-center gap-3">
-               <span className="text-[10px] font-black text-gold uppercase tracking-[0.2em] italic border-b border-gold/20 pb-0.5">{vehicle.placa}</span>
-               <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
-               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{vehicle.color}</span>
+      <div className="p-12 space-y-10">
+        <div className="flex justify-between items-start">
+          <div className="space-y-4">
+            <h3 className="text-4xl md:text-5xl font-robust text-bordeaux-950 dark:text-white italic leading-none">{vehicle.nombre}</h3>
+            <div className="flex items-center gap-6">
+               <div className="flex items-center gap-1.5 text-gold">
+                  {[1,2,3,4,5].map(s => <Star key={s} size={11} fill="currentColor" />)}
+               </div>
+               <span className="tracking-wide-label text-gold italic">{vehicle.placa}</span>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-3xl font-robust text-bordeaux-950 dark:text-white italic leading-none tracking-tighter">R$ {vehicle.precio}</p>
-            <p className="text-[11px] font-black text-gold mt-2 uppercase tracking-widest italic">Gs. {pricePYG.toLocaleString()}</p>
+            <p className="text-5xl font-robust text-bordeaux-950 dark:text-white italic leading-none">R$ {vehicle.precio}</p>
+            <p className="tracking-wide-label text-gold mt-3 italic">Gs. {pricePYG.toLocaleString()}</p>
           </div>
         </div>
 
-        {/* VISUAL SPECS SUMMARY STRIP (ICONOS MEJORADOS) */}
-        <div className="flex justify-around items-center py-4 border-y border-gray-100 dark:border-white/5 mx-2 bg-gray-50/50 dark:bg-white/5 rounded-2xl">
-           <div className="flex flex-col items-center gap-1.5 group/icon">
-              <div className="p-2 bg-white dark:bg-dark-elevated rounded-full shadow-sm text-gold group-hover/icon:scale-110 transition-transform">
-                 <Users size={16} />
-              </div>
-              <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{vehicle.asientos || 5} PAS.</span>
+        <div className="grid grid-cols-3 gap-1 px-8 py-5 bg-gray-50/50 dark:bg-dark-base/30 rounded-3xl border border-gray-100 dark:border-white/5">
+           <div className="flex flex-col items-center gap-1">
+              <Box size={14} className="text-gold" />
+              <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">{vehicle.transmision}</span>
            </div>
-           <div className="w-px h-8 bg-gray-200 dark:bg-white/10"></div>
-           <div className="flex flex-col items-center gap-1.5 group/icon">
-              <div className="p-2 bg-white dark:bg-dark-elevated rounded-full shadow-sm text-gold group-hover/icon:scale-110 transition-transform">
-                 <Fuel size={16} />
-              </div>
-              <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{vehicle.combustible || 'NAFTA'}</span>
+           <div className="flex flex-col items-center gap-1 border-x dark:border-white/10">
+              <Fuel size={14} className="text-gold" />
+              <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">{vehicle.combustible}</span>
            </div>
-           <div className="w-px h-8 bg-gray-200 dark:bg-white/10"></div>
-           <div className="flex flex-col items-center gap-1.5 group/icon">
-              <div className="p-2 bg-white dark:bg-dark-elevated rounded-full shadow-sm text-gold group-hover/icon:scale-110 transition-transform">
-                 <Gauge size={16} />
-              </div>
-              <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{vehicle.transmision || 'AUT.'}</span>
+           <div className="flex flex-col items-center gap-1">
+              <Users size={14} className="text-gold" />
+              <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">{vehicle.asientos} Plazas</span>
            </div>
         </div>
 
-        {/* ACCIONES DE FICHA */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-5">
           <button onClick={(e) => { e.stopPropagation(); setShowAvailability(!showAvailability); setShowDetails(false); }} 
-            className={`py-5 rounded-2xl text-[9px] font-robust uppercase tracking-widest border-2 transition-all flex items-center justify-center gap-2 ${showAvailability ? 'bg-bordeaux-950 text-white border-bordeaux-950 shadow-2xl' : 'bg-gray-50 dark:bg-dark-elevated text-gray-400 border-transparent hover:border-gold/30'}`}>
-            <Calendar size={14} /> Agenda de Salidas
+            className={`py-6 rounded-[2rem] tracking-wide-label border-2 transition-all flex items-center justify-center gap-4 ${showAvailability ? 'bg-bordeaux-950 text-white border-bordeaux-950 shadow-2xl' : 'bg-gray-50 dark:bg-dark-elevated text-gray-400 border-transparent hover:border-gold/30'}`}>
+            <Calendar size={16} /> Agenda
           </button>
           <button onClick={(e) => { e.stopPropagation(); setShowDetails(!showDetails); setShowAvailability(false); }} 
-            className={`py-5 rounded-2xl text-[9px] font-robust uppercase tracking-widest border-2 transition-all flex items-center justify-center gap-2 ${showDetails ? 'bg-bordeaux-950 text-white border-bordeaux-950 shadow-2xl' : 'bg-gray-50 dark:bg-dark-elevated text-gray-400 border-transparent hover:border-gold/30'}`}>
-            <Info size={14} /> Ficha Técnica JM
+            className={`py-6 rounded-[2rem] tracking-wide-label border-2 transition-all flex items-center justify-center gap-4 ${showDetails ? 'bg-bordeaux-950 text-white border-bordeaux-950 shadow-2xl' : 'bg-gray-50 dark:bg-dark-elevated text-gray-400 border-transparent hover:border-gold/30'}`}>
+            <Activity size={16} /> Detalles
           </button>
         </div>
 
-        {/* CALENDARIO EXPANDIBLE */}
         {showAvailability && (
-          <div className="animate-fadeIn">
+          <div className="animate-slideUp mt-6">
             <AvailabilityCalendar vehicleName={vehicle.nombre} reservations={reservations} language={language} onDateRangeSelected={(start, end) => onSelect(start, end)} />
           </div>
         )}
         
-        {/* DETALLES EXPANDIBLES (DISEÑO PREMIUM CARD) */}
         {showDetails && (
-          <div className="space-y-6 animate-fadeIn bg-gradient-to-br from-gray-50 to-white dark:from-dark-elevated dark:to-dark-base p-8 rounded-[3rem] border-2 dark:border-white/5 relative overflow-hidden group/details shadow-inner" onClick={(e) => e.stopPropagation()}>
-             <ShieldCheck size={120} className="absolute -bottom-10 -right-10 text-gold/5 group-hover/details:scale-110 transition-transform" />
-             
-             <div className="relative z-10">
-                <h4 className="text-[10px] font-black text-gold uppercase tracking-[0.3em] mb-6 border-b border-gold/10 pb-2">Especificaciones Técnicas</h4>
-                <div className="grid grid-cols-2 gap-y-6 gap-x-4">
-                   <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-white dark:bg-black/20 rounded-lg flex items-center justify-center text-bordeaux-800 shadow-sm"><Users size={14} /></div>
-                      <div><p className="text-[7px] font-bold text-gray-400 uppercase">Capacidad</p><p className="text-[10px] font-black dark:text-white uppercase">{vehicle.asientos || 5} Pax</p></div>
-                   </div>
-                   <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-white dark:bg-black/20 rounded-lg flex items-center justify-center text-bordeaux-800 shadow-sm"><Fuel size={14} /></div>
-                      <div><p className="text-[7px] font-bold text-gray-400 uppercase">Motor</p><p className="text-[10px] font-black dark:text-white uppercase">{vehicle.combustible || 'Nafta'}</p></div>
-                   </div>
-                   <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-white dark:bg-black/20 rounded-lg flex items-center justify-center text-bordeaux-800 shadow-sm"><Gauge size={14} /></div>
-                      <div><p className="text-[7px] font-bold text-gray-400 uppercase">Caja</p><p className="text-[10px] font-black dark:text-white uppercase">{vehicle.transmision || 'Automático'}</p></div>
-                   </div>
-                   <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-white dark:bg-black/20 rounded-lg flex items-center justify-center text-bordeaux-800 shadow-sm"><Cpu size={14} /></div>
-                      <div><p className="text-[7px] font-bold text-gray-400 uppercase">Clase</p><p className="text-[10px] font-black dark:text-white uppercase">{vehicle.tipo || 'Luxury'}</p></div>
-                   </div>
+          <div className="space-y-12 animate-slideUp bg-gray-50/50 dark:bg-dark-base/50 p-12 rounded-[4rem] border-2 border-white dark:border-white/5 shadow-inner" onClick={(e) => e.stopPropagation()}>
+             <div className="grid grid-cols-2 gap-6">
+                {technicalSpecs.map((spec, i) => (
+                  <div key={i} className="bg-white dark:bg-dark-card p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-white/5 flex flex-col items-center text-center gap-3 group/item hover:border-gold/30 transition-all">
+                    <div className="w-16 h-16 bg-bordeaux-50 dark:bg-bordeaux-900/20 rounded-2xl flex items-center justify-center text-bordeaux-800 dark:text-gold group-hover/item:bg-bordeaux-800 group-hover/item:text-white transition-all">
+                      <spec.icon size={26} strokeWidth={1.5} />
+                    </div>
+                    <div>
+                      <p className="tracking-wide-label text-gray-400 opacity-60 mb-1">{spec.label}</p>
+                      <p className="text-[11px] font-robust text-bordeaux-950 dark:text-white italic tracking-tight">{spec.val}</p>
+                    </div>
+                  </div>
+                ))}
+             </div>
+
+             <div className="pt-12 border-t border-gray-200 dark:border-white/10 space-y-10">
+                <h4 className="tracking-wide-label text-gold flex items-center justify-center gap-4 italic">
+                   <Calculator size={18} /> Simulador JM Platinum
+                </h4>
+                
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                     <label className="tracking-wide-label text-gray-400 ml-4 flex items-center gap-3 italic"><Calendar size={14}/> Inicio</label>
+                     <input type="date" value={calcStart} onChange={e => setCalcStart(e.target.value)} className="w-full bg-white dark:bg-dark-card rounded-2xl px-8 py-5 font-black text-xs outline-none border-2 border-transparent focus:border-gold transition-all shadow-sm dark:text-white" />
+                  </div>
+                  <div className="space-y-4">
+                     <label className="tracking-wide-label text-gray-400 ml-4 flex items-center gap-3 italic"><Clock size={14}/> Entrega</label>
+                     <input type="date" value={calcEnd} onChange={e => setCalcEnd(e.target.value)} className="w-full bg-white dark:bg-dark-card rounded-2xl px-8 py-5 font-black text-xs outline-none border-2 border-transparent focus:border-gold transition-all shadow-sm dark:text-white" />
+                  </div>
                 </div>
 
-                <div className="mt-6 pt-4 border-t border-dashed border-gray-200 dark:border-white/10">
-                   <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-3">Equipamiento</p>
-                   <div className="flex flex-wrap gap-2">
-                      {vehicle.specs.map((s, i) => (
-                        <span key={i} className="text-[8px] font-bold uppercase bg-white dark:bg-black/20 px-3 py-1 rounded-lg border border-gray-100 dark:border-white/5 text-gray-500 shadow-sm">{s}</span>
-                      ))}
-                   </div>
-                </div>
-
-                {/* CALCULADORA DE PRECIO */}
-                <div className="mt-8 bg-bordeaux-950/5 dark:bg-white/5 rounded-3xl p-6 border border-gold/10">
-                   <h4 className="text-[9px] font-black text-bordeaux-800 dark:text-gold uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><Calculator size={14}/> Simulador de Costo</h4>
-                   <div className="grid grid-cols-2 gap-3 mb-4">
-                      <div><p className="text-[7px] font-bold uppercase text-gray-400 mb-1">Inicio</p><input type="date" value={calcStart} onChange={e => setCalcStart(e.target.value)} className="w-full bg-white dark:bg-dark-base rounded-xl px-3 py-2 text-[10px] font-bold border-0 outline-none shadow-sm" /></div>
-                      <div><p className="text-[7px] font-bold uppercase text-gray-400 mb-1">Fin</p><input type="date" value={calcEnd} onChange={e => setCalcEnd(e.target.value)} className="w-full bg-white dark:bg-dark-base rounded-xl px-3 py-2 text-[10px] font-bold border-0 outline-none shadow-sm" /></div>
-                   </div>
-                   {estimatedCost ? (
-                      <div className="bg-white dark:bg-dark-elevated rounded-2xl p-4 text-center shadow-lg border border-gold/20">
-                         <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">{estimatedCost.days} Días Estimados</p>
-                         <div className="flex justify-center items-center gap-4">
-                            <div><p className="text-[12px] font-robust text-bordeaux-950 dark:text-white italic">R$ {estimatedCost.brl}</p></div>
-                            <div className="w-px h-6 bg-gray-200 dark:bg-white/10"></div>
-                            <div><p className="text-[12px] font-robust text-gold italic">Gs. {estimatedCost.pyg.toLocaleString()}</p></div>
+                {estimatedCost && (
+                  <div className="relative overflow-hidden bordeaux-gradient p-1 rounded-[4rem] shadow-2xl animate-slideUp border-2 border-gold/40">
+                     <div className="bg-black/10 backdrop-blur-3xl p-12 rounded-[3.8rem] text-center space-y-8">
+                         <div className="flex flex-col items-center gap-2">
+                             <p className="tracking-wide-label text-gold italic">{estimatedCost.days} Días de Alquiler</p>
+                             <div className="w-24 h-0.5 bg-gold/20 rounded-full"></div>
                          </div>
-                      </div>
-                   ) : (
-                      <div className="text-center py-2"><p className="text-[8px] font-bold text-gray-400 italic">Seleccione fechas para calcular</p></div>
-                   )}
-                </div>
+                         <div className="flex flex-col gap-5">
+                            <div className="flex items-baseline justify-center gap-5">
+                               <span className="text-4xl font-robust italic text-gold">R$</span>
+                               <h3 className="text-7xl font-robust text-white italic tracking-tighter leading-none">{estimatedCost.brl.toLocaleString()}</h3>
+                            </div>
+                            <div className="bg-black/30 py-5 px-12 rounded-full inline-block mx-auto border border-white/10 shadow-2xl backdrop-blur-md">
+                               <p className="text-base font-robust text-gold tracking-widest italic">Gs. {estimatedCost.pyg.toLocaleString()}</p>
+                             </div>
+                         </div>
+                     </div>
+                  </div>
+                )}
              </div>
           </div>
         )}
 
-        {/* BOTÓN DE ACCIÓN PRINCIPAL */}
-        <button className={`w-full py-6 rounded-[2rem] font-robust text-[13px] uppercase tracking-[0.4em] shadow-2xl transition-all relative overflow-hidden group/btn ${isAvailable ? 'bordeaux-gradient text-white active:scale-95' : 'bg-gray-100 text-gray-300 cursor-not-allowed'}`}>
-          <div className="absolute inset-0 bg-gold/20 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-1000"></div>
-          {isAvailable ? 'PROCEDER AL ALQUILER' : vehicle.estado.toUpperCase()}
+        <button 
+          onClick={() => isAvailable && onSelect()} 
+          disabled={!isAvailable}
+          className={`w-full py-9 rounded-[3rem] tracking-ultra text-[13px] font-robust shadow-2xl transition-all relative overflow-hidden group/btn ${
+            isAvailable 
+              ? 'bordeaux-gradient text-white active:scale-95' 
+              : 'bg-gray-100 dark:bg-dark-elevated text-gray-300 dark:text-gray-600 cursor-not-allowed border border-gray-200 dark:border-white/5'
+          }`}
+        >
+          {isAvailable && <div className="absolute inset-0 bg-white/10 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-1000"></div>}
+          <span className="relative z-10 flex items-center justify-center gap-6 italic">
+            {isAvailable ? (
+              <>RESERVAR UNIDAD JM <ChevronRight size={22} className="group-hover/btn:translate-x-3 transition-transform" /></>
+            ) : (
+              <>{statusConfig.icon} NO DISPONIBLE</>
+            )}
+          </span>
         </button>
       </div>
     </div>
